@@ -1,0 +1,8 @@
+{
+  "name": "نظام إدارة الحضور والانصراف والموارد البشرية",
+  "description": "نظام لإدارة الحضور والانصراف والموارد البشرية ",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
