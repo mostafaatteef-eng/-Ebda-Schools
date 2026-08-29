@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
@@ -24,13 +23,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-- name: Setup Node.js
-  uses: actions/setup-node@v4
-  with:
-    node-version: 20
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-- name: Install dependencies
-  run: npm install
+      - name: Install dependencies
+        run: npm install
 
       - name: Build application
         run: npm run build
@@ -45,7 +44,6 @@ jobs:
 
   deploy:
     needs: build
-
     runs-on: ubuntu-latest
 
     environment:
