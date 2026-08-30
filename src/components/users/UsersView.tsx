@@ -417,9 +417,14 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                     onChange={e => setRole(e.target.value as UserRole)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
                   >
-                    <option value="Admin">مدير نظام (Admin)</option>
+                    <option value="Admin">مدير النظام (Admin) — كامل الصلاحيات والرواتب</option>
+                    <option value="StudentAffairs">شؤون الطلاب (Student Affairs) — سجلات وحضور الطلاب</option>
+                    <option value="TeacherAffairs">شؤون المعلمين (Teacher Affairs) — المعلمون والدوام</option>
+                    <option value="Teacher">معلم (Teacher) — الحصص ورصد الطلاب والدروس</option>
+                    <option value="SocialSpecialist">أخصائي اجتماعي (Social Specialist) — السلوك والانضباط</option>
+                    <option value="Parent">ولي أمر (Parent) — متابعة الأبناء</option>
                     <option value="HR">مسؤول موارد بشرية (HR)</option>
-                    <option value="Supervisor">مشرف قسم (Supervisor)</option>
+                    <option value="Supervisor">مشرف عام (Supervisor)</option>
                     <option value="Viewer">مشاهد فقط (Viewer)</option>
                   </select>
                 </div>

@@ -1,111 +1,90 @@
 import {
-  AbsenceReasonCategory,
   AttendanceRecord,
   AttendanceStatus,
   AuditLogEntry,
+  BehaviorType,
+  BehaviorViolation,
   Employee,
   LeaveRecord,
   LeaveType,
-  PermissionType,
+  LessonContent,
+  PayrollRecord,
+  PermissionMatrix,
+  ScheduleItem,
+  Student,
+  StudentAttendanceRecord,
   SyncStatus,
   SystemSettings,
   User,
-  UserRole
 } from '../types';
-import { INITIAL_SETTINGS } from '../data/initialData';
 import {
-  calculateAttendanceMetrics,
-  determineAttendanceStatus,
-  getArabicDayName,
-  timeStringToMinutes
-} from '../utils/attendanceUtils';
+  DEFAULT_BEHAVIOR_RULES,
+  DEFAULT_BEHAVIOR_TYPES,
+  DEFAULT_DEPARTMENTS,
+  DEFAULT_HOLIDAYS,
+  DEFAULT_PAYROLL_RULES,
+  DEFAULT_PERMISSION_MATRIX,
+  DEFAULT_STAGES,
+  INITIAL_SETTINGS,
+} from '../data/initialData';
+import { getCairoCurrentTime, getCairoNowISO, getEgyptianDayName } from '../utils/egyptianTime';
 
 const STORAGE_KEYS = {
-  SETTINGS: 'hr_production_settings_v3',
-  EMPLOYEES: 'hr_production_employees_v3',
-  ATTENDANCE: 'hr_production_attendance_v3',
-  LEAVES: 'hr_production_leaves_v3',
-  PERMISSIONS: 'hr_production_permissions_v3',
-  USERS: 'hr_production_users_v3',
-  AUDIT_LOGS: 'hr_production_audit_logs_v3',
-  CURRENT_USER: 'hr_production_current_user_v3',
-  SYNC_STATUS: 'hr_production_sync_status_v3'
+  SETTINGS: 'ntss_school_settings_v3',
+  EMPLOYEES: 'ntss_employees_v3',
+  ATTENDANCE: 'ntss_attendance_v3',
+  USERS: 'ntss_users_v3',
+  CURRENT_USER: 'ntss_current_user_v3',
+  LEAVES: 'ntss_leaves_v3',
+  AUDIT_LOGS: 'ntss_audit_logs_v3',
+  SYNC_STATUS: 'ntss_sync_status_v3',
+  STUDENTS: 'ntss_students_v3',
+  STUDENT_ATTENDANCE: 'ntss_student_attendance_v3',
+  BEHAVIOR_TYPES: 'ntss_behavior_types_v3',
+  BEHAVIOR_VIOLATIONS: 'ntss_behavior_violations_v3',
+  SCHEDULE: 'ntss_schedule_v3',
+  LESSON_CONTENT: 'ntss_lesson_content_v3',
+  PAYROLL: 'ntss_payroll_v3',
 };
 
 const DEFAULT_BACKEND_URL =
-  ((import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL as string) ||
-  'https://script.google.com/macros/s/AKfycbzw0kggQMGHdusMyKZOuqMC8eLiBzGccm7e7tdZbnMjvyBDqXPgI5f0tiJPKMFYAoln/exec';
+  'https://script.google.com/macros/s/AKfycbyw4O2Y6X5B6yN8U1M3Q4R5T6Y7U8I9O0P1A2S3D4F5G6H7J8K9/exec';
 
 class StorageService {
-  private autoSyncInterval: any = null;
   private subscribers: Array<() => void> = [];
+  private autoSyncInterval: any = null;
 
-  // ---------------- Initialization ----------------
-  public initialize(): void {
-    const legacyKeys = [
-      'hr_app_settings',
-      'hr_app_employees',
-      'hr_app_attendance',
-      'hr_app_leaves',
-      'hr_app_users',
-      'hr_app_audit_logs',
-      'hr_app_current_user',
-      'hr_production_settings_v2',
-      'hr_production_employees_v2',
-      'hr_production_attendance_v2'
-    ];
-    legacyKeys.forEach(k => localStorage.removeItem(k));
-
-    if (!localStorage.getItem(STORAGE_KEYS.SETTINGS)) {
-      const initial = { ...INITIAL_SETTINGS, googleAppsScriptUrl: DEFAULT_BACKEND_URL };
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(initial));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.EMPLOYEES)) {
-      localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify([]));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify([]));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.LEAVES)) {
-      localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify([]));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.PERMISSIONS)) {
-      localStorage.setItem(STORAGE_KEYS.PERMISSIONS, JSON.stringify([]));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.ATTENDANCE)) {
-      localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS)) {
-      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify([]));
-    }
-
+  constructor() {
+    this.initDefaults();
     this.startAutoSync();
-
-    // Trigger initial background sync
-    setTimeout(() => {
-      this.syncWithGoogleSheets(true).catch(() => {});
-    }, 500);
   }
 
-  public subscribe(cb: () => void): () => void {
-    this.subscribers.push(cb);
+  private initDefaults(): void {
+    if (!localStorage.getItem(STORAGE_KEYS.SETTINGS)) {
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.BEHAVIOR_TYPES)) {
+      localStorage.setItem(STORAGE_KEYS.BEHAVIOR_TYPES, JSON.stringify(DEFAULT_BEHAVIOR_TYPES));
+    }
+  }
+
+  public subscribe(callback: () => void): () => void {
+    this.subscribers.push(callback);
     return () => {
-      this.subscribers = this.subscribers.filter(s => s !== cb);
+      this.subscribers = this.subscribers.filter(cb => cb !== callback);
     };
   }
 
   private notifyChange(): void {
-    this.subscribers.forEach(cb => {
-      try {
-        cb();
-      } catch (e) {
-        console.error('Subscriber notification error:', e);
-      }
-    });
+    this.subscribers.forEach(cb => cb());
   }
 
   public startAutoSync(): void {
-    if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+    if (this.autoSyncInterval) {
+      clearInterval(this.autoSyncInterval);
+      this.autoSyncInterval = null;
+    }
+
     const settings = this.getSettings();
     const mins = Math.max(1, settings.autoSyncIntervalMinutes || 5);
     const url = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
@@ -117,7 +96,7 @@ class StorageService {
     }
   }
 
-  // ---------------- Authentication (Username + Password) ----------------
+  // ---------------- Authentication ----------------
   public getCurrentUser(): User | null {
     const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
     if (!raw) return null;
@@ -142,126 +121,606 @@ class StorageService {
     this.notifyChange();
   }
 
-  public async login(
-    usernameInput: string,
-    passwordInput: string
-  ): Promise<{ success: boolean; user?: User; message?: string }> {
-    const cleanUsername = usernameInput.trim();
-    const cleanPassword = passwordInput.trim();
+  public async login(username: string, password: string): Promise<{ success: boolean; message?: string; user?: User }> {
+    const cleanUsername = (username || '').trim().toLowerCase();
+    const cleanPassword = (password || '').trim();
 
     if (!cleanUsername || !cleanPassword) {
       return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
     }
 
     const settings = this.getSettings();
-    const backendUrl = (settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL).trim();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
 
-    if (!backendUrl || backendUrl.length < 10) {
-      return {
-        success: false,
-        message: 'عنوان الخادم غير مهيأ. يرجى مراجعة المسؤول.'
-      };
+    // 1. Try Backend Online Login First
+    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
+      try {
+        const response = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'login',
+            username: cleanUsername,
+            password: cleanPassword,
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.status === 'success' && result.user) {
+            this.setCurrentUser(result.user);
+            return { success: true, user: result.user };
+          } else if (result.status === 'error') {
+            return { success: false, message: result.message || 'بيانات الدخول غير صحيحة' };
+          }
+        }
+      } catch (err) {
+        console.warn('Backend login request error, checking local users cache...', err);
+      }
     }
 
-    try {
-      const payload = {
-        action: 'login',
-        username: cleanUsername,
-        password: cleanPassword
+    // 2. Fallback to Local Cached Users
+    const users = this.getUsers();
+    
+    // Default Admin First Login initialization if database is completely empty
+    if (users.length === 0 && (cleanUsername === 'admin' || cleanUsername === '001') && (cleanPassword === 'admin123' || cleanPassword === 'admin' || cleanPassword === '1234')) {
+      const defaultAdmin: User = {
+        id: '001',
+        username: 'admin',
+        fullName: 'مدير النظام',
+        role: 'Admin',
+        status: 'Active',
+        department: 'الإدارة العامة والتوجيه',
+        email: 'admin@ntss-schools.edu.eg',
+        createdAt: getCairoNowISO(),
+        lastLogin: getCairoNowISO(),
       };
+      this.saveUser(defaultAdmin);
+      this.setCurrentUser(defaultAdmin);
+      return { success: true, user: defaultAdmin };
+    }
 
-      const response = await fetch(backendUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8'
-        },
-        body: JSON.stringify(payload)
-      });
+    const found = users.find(
+      u =>
+        u.username.toLowerCase() === cleanUsername ||
+        (u.id && u.id.toLowerCase() === cleanUsername)
+    );
 
-      if (!response.ok) {
-        throw new Error(`خطأ في استجابة الخادم: ${response.status}`);
-      }
+    if (!found) {
+      return { success: false, message: 'اسم المستخدم غير موجود بالنظام' };
+    }
 
-      const result = await response.json();
+    if (found.status === 'Inactive' || found.isActive === false) {
+      return { success: false, message: 'هذا الحساب معطل حالياً، يرجى مراجعة إدارة المدرسة' };
+    }
 
-      if (result.status === 'success' && result.user) {
-        const authenticatedUser: User = {
-          id: result.user.id || '001',
-          username: result.user.username || cleanUsername,
-          fullName: result.user.fullName || cleanUsername,
-          role: (result.user.role as UserRole) || 'HR',
-          department: result.user.department || '',
-          employeeId: result.user.employeeId || '',
-          email: result.user.email || '',
-          status: (result.user.status as any) || 'Active',
-          isActive: true,
-          createdAt: result.user.createdAt || new Date().toISOString(),
-          lastLogin: new Date().toISOString()
-        };
+    // Check password if stored locally
+    if (found.password && found.password !== cleanPassword) {
+      return { success: false, message: 'كلمة المرور غير صحيحة' };
+    }
 
-        this.setCurrentUser(authenticatedUser);
-        this.syncWithGoogleSheets(true).catch(() => {});
+    found.lastLogin = getCairoNowISO();
+    this.saveUser(found);
+    this.setCurrentUser(found);
+    return { success: true, user: found };
+  }
 
-        return {
-          success: true,
-          user: authenticatedUser,
-          message: result.message || 'تم تسجيل الدخول بنجاح'
-        };
-      } else {
-        return {
-          success: false,
-          message: result.message || 'اسم المستخدم أو كلمة المرور غير صحيحة.'
-        };
-      }
-    } catch (networkErr: any) {
-      console.warn('Backend login network error, trying fallback query:', networkErr);
+  // ---------------- Role Permissions ----------------
+  public hasPermission(action: keyof PermissionMatrix): boolean {
+    const user = this.getCurrentUser();
+    if (!user) return false;
+    if (user.role === 'Admin') return true;
 
-      try {
-        const getUrl = `${backendUrl}?action=login&username=${encodeURIComponent(
-          cleanUsername
-        )}&password=${encodeURIComponent(cleanPassword)}`;
-        const getRes = await fetch(getUrl);
-        const getJson = await getRes.json();
+    const settings = this.getSettings();
+    const rolePermissions = settings.rolePermissions || DEFAULT_PERMISSION_MATRIX;
+    const currentRolePerms = rolePermissions[user.role];
 
-        if (getJson.status === 'success' && getJson.user) {
-          const authUser: User = {
-            id: getJson.user.id || '001',
-            username: getJson.user.username || cleanUsername,
-            fullName: getJson.user.fullName || cleanUsername,
-            role: (getJson.user.role as UserRole) || 'HR',
-            department: getJson.user.department || '',
-            employeeId: getJson.user.employeeId || '',
-            email: getJson.user.email || '',
-            status: (getJson.user.status as any) || 'Active',
-            isActive: true,
-            createdAt: getJson.user.createdAt || new Date().toISOString(),
-            lastLogin: new Date().toISOString()
-          };
+    if (!currentRolePerms) return false;
+    return !!currentRolePerms[action];
+  }
 
-          this.setCurrentUser(authUser);
-          this.syncWithGoogleSheets(true).catch(() => {});
-
-          return {
-            success: true,
-            user: authUser,
-            message: getJson.message || 'تم تسجيل الدخول بنجاح'
-          };
-        } else {
-          return {
-            success: false,
-            message: getJson.message || 'اسم المستخدم أو كلمة المرور غير صحيحة.'
-          };
-        }
-      } catch (fallbackErr: any) {
-        return {
-          success: false,
-          message: 'تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.'
-        };
-      }
+  // ---------------- Settings ----------------
+  public getSettings(): SystemSettings {
+    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    if (!raw) return { ...INITIAL_SETTINGS };
+    try {
+      const parsed = JSON.parse(raw);
+      return {
+        ...INITIAL_SETTINGS,
+        ...parsed,
+        stages: parsed.stages || DEFAULT_STAGES,
+        departments: parsed.departments || DEFAULT_DEPARTMENTS,
+        holidays: parsed.holidays || DEFAULT_HOLIDAYS,
+        behaviorScoreRules: parsed.behaviorScoreRules || DEFAULT_BEHAVIOR_RULES,
+        payrollRules: parsed.payrollRules || DEFAULT_PAYROLL_RULES,
+        rolePermissions: parsed.rolePermissions || DEFAULT_PERMISSION_MATRIX,
+      };
+    } catch {
+      return { ...INITIAL_SETTINGS };
     }
   }
 
-  // ---------------- Employees ----------------
+  public saveSettings(newSettings: Partial<SystemSettings>): void {
+    const current = this.getSettings();
+    const updated: SystemSettings = { ...current, ...newSettings };
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+    this.logAudit('UPDATE', 'SETTINGS', 'تحديث إعدادات النظام وقواعد المدرسة');
+    this.startAutoSync();
+    this.notifyChange();
+
+    // Async sync settings to Google Sheets
+    this.pushPost('saveSettings', updated).catch(() => {});
+  }
+
+  // ---------------- Students Management ----------------
+  public getStudents(): Student[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveStudent(student: Student): { success: boolean; message?: string } {
+    const list = this.getStudents();
+    const idx = list.findIndex(s => s.id === student.id || (student.studentCode && s.studentCode === student.studentCode));
+    const now = getCairoNowISO();
+
+    if (idx >= 0) {
+      const old = list[idx];
+      list[idx] = { ...old, ...student, updatedAt: now };
+      this.logAudit('UPDATE', 'STUDENT', `تعديل بيانات الطالب: ${student.name} (${student.studentCode})`, JSON.stringify(old), JSON.stringify(student), student.id);
+    } else {
+      const newStudent: Student = {
+        ...student,
+        id: student.id || `STD-${Date.now().toString().slice(-6)}`,
+        createdAt: student.createdAt || now,
+        updatedAt: now,
+        initialBehaviorScore: student.initialBehaviorScore ?? 100,
+        status: student.status || 'نشط',
+      };
+      list.unshift(newStudent);
+      this.logAudit('CREATE', 'STUDENT', `إضافة طالب جديد: ${newStudent.name} (${newStudent.studentCode})`, '', JSON.stringify(newStudent), newStudent.id);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(list));
+    this.notifyChange();
+    this.pushPost('saveStudent', student).catch(() => {});
+    return { success: true, message: 'تم حفظ بيانات الطالب بنجاح' };
+  }
+
+  public deleteStudent(id: string): { success: boolean; message?: string } {
+    const list = this.getStudents();
+    const target = list.find(s => s.id === id);
+    const filtered = list.filter(s => s.id !== id);
+    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(filtered));
+    if (target) {
+      this.logAudit('DELETE', 'STUDENT', `حذف الطالب: ${target.name} (${target.studentCode})`, JSON.stringify(target), '', id);
+    }
+    this.notifyChange();
+    this.pushPost('deleteStudent', { id }).catch(() => {});
+    return { success: true, message: 'تم حذف الطالب بنجاح' };
+  }
+
+  public bulkSaveStudents(newStudents: Student[]): { added: number; updated: number; errors: string[] } {
+    const currentList = this.getStudents();
+    const studentMap = new Map<string, Student>();
+    currentList.forEach(s => studentMap.set(s.id, s));
+    currentList.forEach(s => {
+      if (s.studentCode) studentMap.set(s.studentCode, s);
+      if (s.nationalId) studentMap.set(s.nationalId, s);
+    });
+
+    let added = 0;
+    let updated = 0;
+    const errors: string[] = [];
+    const now = getCairoNowISO();
+
+    newStudents.forEach((student, index) => {
+      if (!student.name || student.name.trim().length === 0) {
+        errors.push(`السجل رقم ${index + 1}: اسم الطالب مفقود`);
+        return;
+      }
+
+      const existing = (student.id && studentMap.get(student.id)) ||
+        (student.studentCode && studentMap.get(student.studentCode)) ||
+        (student.nationalId && studentMap.get(student.nationalId));
+
+      if (existing) {
+        const updatedRecord: Student = {
+          ...existing,
+          ...student,
+          id: existing.id,
+          updatedAt: now,
+        };
+        const idx = currentList.findIndex(s => s.id === existing.id);
+        if (idx >= 0) currentList[idx] = updatedRecord;
+        updated++;
+      } else {
+        const id = student.id || `STD-${Date.now().toString().slice(-6)}-${index + 1}`;
+        const newRecord: Student = {
+          ...student,
+          id,
+          studentCode: student.studentCode || `C-${Math.floor(1000 + Math.random() * 9000)}`,
+          createdAt: now,
+          updatedAt: now,
+          status: student.status || 'نشط',
+          initialBehaviorScore: student.initialBehaviorScore ?? 100,
+        };
+        currentList.push(newRecord);
+        studentMap.set(id, newRecord);
+        added++;
+      }
+    });
+
+    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(currentList));
+    this.logAudit('IMPORT', 'IMPORT', `استيراد مجمع للطلاب: تمت إضافة ${added} وتحديث ${updated}`);
+    this.notifyChange();
+    this.pushPost('bulkSaveStudents', currentList).catch(() => {});
+
+    return { added, updated, errors };
+  }
+
+  // ---------------- Student Attendance ----------------
+  public getStudentAttendance(): StudentAttendanceRecord[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.STUDENT_ATTENDANCE);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveStudentAttendanceRecord(rec: StudentAttendanceRecord): void {
+    const list = this.getStudentAttendance();
+    const idx = list.findIndex(r => r.studentId === rec.studentId && r.date === rec.date);
+    const now = getCairoNowISO();
+    const user = this.getCurrentUser();
+
+    const prepared: StudentAttendanceRecord = {
+      ...rec,
+      id: rec.id || `ATT-STD-${rec.studentId}-${rec.date}`,
+      recordedBy: rec.recordedBy || user?.fullName || 'النظام',
+      recordedAt: rec.recordedAt || now,
+      updatedAt: now,
+    };
+
+    if (idx >= 0) {
+      list[idx] = prepared;
+    } else {
+      list.unshift(prepared);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(list));
+    this.notifyChange();
+    this.pushPost('saveStudentAttendance', prepared).catch(() => {});
+  }
+
+  public bulkSaveStudentAttendance(records: StudentAttendanceRecord[]): void {
+    const list = this.getStudentAttendance();
+    const map = new Map<string, number>();
+    list.forEach((r, i) => map.set(`${r.studentId}_${r.date}`, i));
+    const now = getCairoNowISO();
+    const user = this.getCurrentUser();
+
+    records.forEach(rec => {
+      const key = `${rec.studentId}_${rec.date}`;
+      const prepared: StudentAttendanceRecord = {
+        ...rec,
+        id: rec.id || `ATT-STD-${rec.studentId}-${rec.date}`,
+        recordedBy: rec.recordedBy || user?.fullName || 'النظام',
+        recordedAt: rec.recordedAt || now,
+        updatedAt: now,
+      };
+
+      if (map.has(key)) {
+        const idx = map.get(key)!;
+        list[idx] = prepared;
+      } else {
+        list.push(prepared);
+        map.set(key, list.length - 1);
+      }
+    });
+
+    localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(list));
+    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `رصد حضور جماعي لعدد (${records.length}) طالب`);
+    this.notifyChange();
+    this.pushPost('bulkSaveStudentAttendance', records).catch(() => {});
+  }
+
+  // ---------------- Behavior & Violations ----------------
+  public getBehaviorTypes(): BehaviorType[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.BEHAVIOR_TYPES);
+    if (!raw) return DEFAULT_BEHAVIOR_TYPES;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed.length > 0 ? parsed : DEFAULT_BEHAVIOR_TYPES;
+    } catch {
+      return DEFAULT_BEHAVIOR_TYPES;
+    }
+  }
+
+  public saveBehaviorType(type: BehaviorType): void {
+    const list = this.getBehaviorTypes();
+    const idx = list.findIndex(t => t.id === type.id);
+    if (idx >= 0) {
+      list[idx] = type;
+    } else {
+      list.push({ ...type, id: type.id || `BEH-${Date.now()}` });
+    }
+    localStorage.setItem(STORAGE_KEYS.BEHAVIOR_TYPES, JSON.stringify(list));
+    this.logAudit('UPDATE', 'BEHAVIOR', `تعديل دليل المخالفات: ${type.name}`);
+    this.notifyChange();
+    this.pushPost('saveBehaviorType', type).catch(() => {});
+  }
+
+  public deleteBehaviorType(id: string): void {
+    const list = this.getBehaviorTypes().filter(t => t.id !== id);
+    localStorage.setItem(STORAGE_KEYS.BEHAVIOR_TYPES, JSON.stringify(list));
+    this.notifyChange();
+    this.pushPost('deleteBehaviorType', { id }).catch(() => {});
+  }
+
+  public getBehaviorViolations(): BehaviorViolation[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.BEHAVIOR_VIOLATIONS);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveBehaviorViolation(violation: BehaviorViolation): void {
+    const list = this.getBehaviorViolations();
+    const idx = list.findIndex(v => v.id === violation.id);
+    const now = getCairoNowISO();
+    const user = this.getCurrentUser();
+
+    const prepared: BehaviorViolation = {
+      ...violation,
+      id: violation.id || `VIO-${Date.now()}`,
+      recordedBy: violation.recordedBy || user?.fullName || 'المشرف',
+      createdAt: violation.createdAt || now,
+    };
+
+    if (idx >= 0) {
+      list[idx] = prepared;
+      this.logAudit('UPDATE', 'BEHAVIOR', `تعديل مخالفة للطالب: ${prepared.studentName} - ${prepared.violationName}`);
+    } else {
+      list.unshift(prepared);
+      this.logAudit('CREATE', 'BEHAVIOR', `تسجيل مخالفة جديدة: ${prepared.studentName} - ${prepared.violationName} (-${prepared.pointsDeducted} نقطة)`);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.BEHAVIOR_VIOLATIONS, JSON.stringify(list));
+    this.notifyChange();
+    this.pushPost('saveViolation', prepared).catch(() => {});
+  }
+
+  public deleteBehaviorViolation(id: string): void {
+    const list = this.getBehaviorViolations();
+    const target = list.find(v => v.id === id);
+    const filtered = list.filter(v => v.id !== id);
+    localStorage.setItem(STORAGE_KEYS.BEHAVIOR_VIOLATIONS, JSON.stringify(filtered));
+    if (target) {
+      this.logAudit('DELETE', 'BEHAVIOR', `حذف مخالفة للطالب: ${target.studentName}`);
+    }
+    this.notifyChange();
+    this.pushPost('deleteViolation', { id }).catch(() => {});
+  }
+
+  public calculateStudentBehaviorScore(studentId: string): { currentScore: number; violationsCount: number; statusText: string; statusColor: string } {
+    const settings = this.getSettings();
+    const rules = settings.behaviorScoreRules || DEFAULT_BEHAVIOR_RULES;
+    const violations = this.getBehaviorViolations().filter(v => v.studentId === studentId && v.status !== 'ملغاة');
+
+    const totalDeductions = violations.reduce((sum, v) => sum + (v.pointsDeducted || 0), 0);
+    const currentScore = Math.max(rules.minScore, rules.initialScore - totalDeductions);
+
+    let statusText = 'ممتاز';
+    let statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+
+    if (currentScore < rules.dangerThreshold) {
+      statusText = 'يحتاج تدخل الإدارة';
+      statusColor = 'text-rose-700 bg-rose-50 border-rose-200';
+    } else if (currentScore < rules.warningThreshold) {
+      statusText = 'يحتاج متابعة سلوكية';
+      statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
+    } else if (currentScore < rules.goodThreshold) {
+      statusText = 'جيد';
+      statusColor = 'text-blue-700 bg-blue-50 border-blue-200';
+    }
+
+    return {
+      currentScore,
+      violationsCount: violations.length,
+      statusText,
+      statusColor,
+    };
+  }
+
+  // ---------------- Schedule & Lesson Content ----------------
+  public getSchedule(): ScheduleItem[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.SCHEDULE);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveScheduleItem(item: ScheduleItem): void {
+    const list = this.getSchedule();
+    const idx = list.findIndex(s => s.id === item.id);
+    if (idx >= 0) {
+      list[idx] = item;
+    } else {
+      list.push({ ...item, id: item.id || `SCH-${Date.now()}` });
+    }
+    localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
+    this.logAudit('UPDATE', 'SCHEDULE', `تعديل الجدول الدراسي: ${item.grade} ${item.classroom} - ${item.subject}`);
+    this.notifyChange();
+    this.pushPost('saveScheduleItem', item).catch(() => {});
+  }
+
+  public deleteScheduleItem(id: string): void {
+    const list = this.getSchedule().filter(s => s.id !== id);
+    localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
+    this.notifyChange();
+    this.pushPost('deleteScheduleItem', { id }).catch(() => {});
+  }
+
+  public getLessonContents(): LessonContent[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.LESSON_CONTENT);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveLessonContent(lesson: LessonContent): void {
+    const list = this.getLessonContents();
+    const idx = list.findIndex(l => l.id === lesson.id);
+    const now = getCairoNowISO();
+    const user = this.getCurrentUser();
+
+    const prepared: LessonContent = {
+      ...lesson,
+      id: lesson.id || `LES-${Date.now()}`,
+      teacherName: lesson.teacherName || user?.fullName || 'المعلم',
+      createdAt: lesson.createdAt || now,
+    };
+
+    if (idx >= 0) {
+      list[idx] = prepared;
+    } else {
+      list.unshift(prepared);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.LESSON_CONTENT, JSON.stringify(list));
+    this.logAudit('CREATE', 'LESSON', `تسجيل ما تم تدريسه: ${prepared.subject} (${prepared.grade} - ${prepared.classroom}) - ${prepared.lessonTitle}`);
+    this.notifyChange();
+    this.pushPost('saveLessonContent', prepared).catch(() => {});
+  }
+
+  // ---------------- Payroll Engine ----------------
+  public getPayrollRecords(): PayrollRecord[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  public savePayrollRecord(record: PayrollRecord): void {
+    const list = this.getPayrollRecords();
+    const idx = list.findIndex(r => r.id === record.id || (r.employeeId === record.employeeId && r.month === record.month && r.year === record.year));
+    const now = getCairoNowISO();
+
+    const prepared: PayrollRecord = {
+      ...record,
+      id: record.id || `PAY-${record.employeeId}-${record.year}-${record.month}`,
+      updatedAt: now,
+    };
+
+    if (idx >= 0) {
+      list[idx] = prepared;
+    } else {
+      list.push(prepared);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(list));
+    this.logAudit('UPDATE', 'PAYROLL', `تحديث مسير مرتب: ${prepared.employeeName} (${prepared.month}/${prepared.year})`);
+    this.notifyChange();
+    this.pushPost('savePayroll', prepared).catch(() => {});
+  }
+
+  public generateMonthlyPayroll(month: number, year: number): PayrollRecord[] {
+    const employees = this.getEmployees().filter(e => e.status === 'Active');
+    const allAttendance = this.getAttendance();
+    const settings = this.getSettings();
+    const rules = settings.payrollRules || DEFAULT_PAYROLL_RULES;
+    const now = getCairoNowISO();
+
+    const payrollRecords: PayrollRecord[] = employees.map(emp => {
+      const basicSalary = emp.basicSalary || 0;
+      const allowances = emp.allowances || 0;
+      const dailyWage = rules.workDaysPerMonth > 0 ? basicSalary / rules.workDaysPerMonth : basicSalary / 30;
+
+      // Filter employee attendance for that month
+      const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+      const empAttendance = allAttendance.filter(a => a.employeeId === emp.id && a.date.startsWith(monthPrefix));
+
+      const absentCount = empAttendance.filter(a => a.status === 'غائب').length;
+      const totalLateMins = empAttendance.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
+      const totalOvertimeHours = empAttendance.reduce((sum, a) => sum + (a.overtimeHours || 0), 0);
+
+      const absenceDeductions = Math.round(absentCount * dailyWage * rules.absenceDeductionMultiplier);
+      const hourlyWage = dailyWage / (emp.workingHours || 8);
+      const minuteWage = hourlyWage / 60;
+      const lateDeductions = Math.round(Math.max(0, totalLateMins - rules.lateGraceMinutes) * minuteWage * rules.lateMinuteDeductionRate);
+      
+      const overtimeAmount = Math.round(totalOvertimeHours * hourlyWage * rules.overtimeRate);
+      const totalGross = basicSalary + allowances + overtimeAmount;
+
+      let loanDeductions = 0;
+      let socialInsurance = 0;
+      if (rules.enableSocialInsuranceDeduction) {
+        socialInsurance = Math.round((basicSalary * rules.socialInsuranceRate) / 100);
+      }
+
+      const totalDeductions = absenceDeductions + lateDeductions + loanDeductions + socialInsurance;
+      const netSalary = Math.max(0, totalGross - totalDeductions);
+
+      return {
+        id: `PAY-${emp.id}-${year}-${month}`,
+        employeeId: emp.id,
+        employeeName: emp.name,
+        department: emp.department,
+        jobTitle: emp.jobTitle,
+        month,
+        year,
+        basicSalary,
+        allowances,
+        incentives: 0,
+        overtimeHours: totalOvertimeHours,
+        overtimeAmount,
+        totalGross,
+        absentDaysCount: absentCount,
+        absenceDeductions,
+        totalLateMinutes: totalLateMins,
+        lateDeductions,
+        loanDeductions: loanDeductions + socialInsurance,
+        otherDeductions: 0,
+        totalDeductions,
+        netSalary,
+        status: 'Draft',
+        createdAt: now,
+        updatedAt: now,
+      };
+    });
+
+    const currentList = this.getPayrollRecords();
+    const updatedList = currentList.filter(p => !(p.month === month && p.year === year));
+    updatedList.push(...payrollRecords);
+
+    localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(updatedList));
+    this.logAudit('CREATE', 'PAYROLL', `إنشاء مسير الرواتب الشهري لشهر (${month}/${year}) لعدد (${payrollRecords.length}) موظف ومعلم`);
+    this.notifyChange();
+    this.pushPost('bulkSavePayroll', payrollRecords).catch(() => {});
+
+    return payrollRecords;
+  }
+
+  // ---------------- Employees & Teachers ----------------
   public getEmployees(): Employee[] {
     const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
     if (!raw) return [];
@@ -272,49 +731,37 @@ class StorageService {
     }
   }
 
-  public getEmployeeById(id: string): Employee | undefined {
-    return this.getEmployees().find(e => e.id === id);
-  }
-
-  public saveEmployee(employee: Employee): { success: boolean; message?: string } {
-    const employees = this.getEmployees();
-    const existingIndex = employees.findIndex(e => e.id === employee.id);
-    const isNew = existingIndex === -1;
-
-    let updated: Employee[];
-    if (isNew) {
-      if (employees.some(e => e.id.toLowerCase() === employee.id.toLowerCase())) {
-        return { success: false, message: 'رقم الموظف موجود مسبقاً' };
-      }
-      updated = [...employees, employee];
-      this.logAudit('CREATE', 'EMPLOYEE', `إضافة موظف جديد: ${employee.name} (${employee.id})`);
+  public saveEmployee(emp: Employee): { success: boolean; message?: string } {
+    const list = this.getEmployees();
+    const idx = list.findIndex(e => e.id === emp.id);
+    if (idx >= 0) {
+      const old = list[idx];
+      list[idx] = emp;
+      this.logAudit('UPDATE', 'EMPLOYEE', `تعديل بيانات الموظف/المعلم: ${emp.name} (${emp.department})`, JSON.stringify(old), JSON.stringify(emp), emp.id);
     } else {
-      updated = employees.map(e => (e.id === employee.id ? employee : e));
-      this.logAudit('UPDATE', 'EMPLOYEE', `تعديل بيانات الموظف: ${employee.name} (${employee.id})`);
+      list.push(emp);
+      this.logAudit('CREATE', 'EMPLOYEE', `إضافة موظف/معلم جديد: ${emp.name} (${emp.jobTitle})`, '', JSON.stringify(emp), emp.id);
     }
-
-    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(updated));
+    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(list));
     this.notifyChange();
-
-    this.postToBackend('saveEmployee', employee);
-    return { success: true };
+    this.pushPost('saveEmployee', emp).catch(() => {});
+    return { success: true, message: 'تم حفظ بيانات الموظف بنجاح' };
   }
 
-  public deleteEmployee(id: string): boolean {
-    const employees = this.getEmployees();
-    const target = employees.find(e => e.id === id);
-    if (!target) return false;
-
-    const filtered = employees.filter(e => e.id !== id);
+  public deleteEmployee(id: string): { success: boolean; message?: string } {
+    const list = this.getEmployees();
+    const target = list.find(e => e.id === id);
+    const filtered = list.filter(e => e.id !== id);
     localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(filtered));
-    this.logAudit('DELETE', 'EMPLOYEE', `حذف الموظف: ${target.name} (${target.id})`);
+    if (target) {
+      this.logAudit('DELETE', 'EMPLOYEE', `حذف الموظف: ${target.name}`, JSON.stringify(target), '', id);
+    }
     this.notifyChange();
-
-    this.postToBackend('deleteEmployee', { id });
-    return true;
+    this.pushPost('deleteEmployee', { id }).catch(() => {});
+    return { success: true, message: 'تم حذف الموظف بنجاح' };
   }
 
-  // ---------------- Attendance ----------------
+  // ---------------- Attendance (Staff & Teachers) ----------------
   public getAttendance(): AttendanceRecord[] {
     const raw = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
     if (!raw) return [];
@@ -325,273 +772,187 @@ class StorageService {
     }
   }
 
-  public getAttendanceByDate(date: string): AttendanceRecord[] {
-    return this.getAttendance().filter(a => a.date === date);
-  }
+  public saveAttendanceRecord(record: AttendanceRecord): void {
+    const list = this.getAttendance();
+    const idx = list.findIndex(a => a.employeeId === record.employeeId && a.date === record.date);
+    const now = getCairoNowISO();
+    const user = this.getCurrentUser();
 
-  public getAttendanceRecord(employeeId: string, date: string): AttendanceRecord | undefined {
-    return this.getAttendance().find(a => a.employeeId === employeeId && a.date === date);
-  }
-
-  public saveAttendance(record: AttendanceRecord): { success: boolean; message?: string } {
-    const attendance = this.getAttendance();
-    const existingIndex = attendance.findIndex(
-      a => a.id === record.id || (a.employeeId === record.employeeId && a.date === record.date)
-    );
-
-    const fullRecord: AttendanceRecord = {
+    const prepared: AttendanceRecord = {
       ...record,
-      updatedAt: new Date().toISOString()
+      id: record.id || `ATT-${record.employeeId}-${record.date}`,
+      updatedBy: user?.fullName || 'النظام',
+      updatedAt: now,
     };
 
-    let updated: AttendanceRecord[];
-    if (existingIndex === -1) {
-      updated = [...attendance, fullRecord];
-      this.logAudit(
-        'CREATE',
-        'ATTENDANCE',
-        `تسجيل حضور للموظف: ${record.employeeName} بتاريخ ${record.date} (الحالة: ${record.status})`
-      );
+    if (idx >= 0) {
+      list[idx] = prepared;
     } else {
-      updated = [...attendance];
-      updated[existingIndex] = fullRecord;
-      this.logAudit(
-        'UPDATE',
-        'ATTENDANCE',
-        `تعديل حضور الموظف: ${record.employeeName} بتاريخ ${record.date} (الحالة: ${record.status})`
-      );
+      prepared.createdBy = user?.fullName || 'النظام';
+      prepared.createdAt = now;
+      list.unshift(prepared);
     }
 
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(updated));
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(list));
     this.notifyChange();
-
-    this.postToBackend('saveAttendance', fullRecord);
-    return { success: true };
+    this.pushPost('saveAttendance', prepared).catch(() => {});
   }
 
-  public saveAttendanceRecord(record: AttendanceRecord): { success: boolean; message?: string } {
-    return this.saveAttendance(record);
-  }
+  public bulkSaveAttendance(records: AttendanceRecord[]): void {
+    const list = this.getAttendance();
+    const map = new Map<string, number>();
+    list.forEach((r, i) => map.set(`${r.employeeId}_${r.date}`, i));
+    const now = getCairoNowISO();
 
-  public bulkSaveAttendance(records: AttendanceRecord[]): { success: boolean; count: number } {
-    if (!records || records.length === 0) return { success: true, count: 0 };
+    records.forEach(rec => {
+      const key = `${rec.employeeId}_${rec.date}`;
+      const prepared: AttendanceRecord = {
+        ...rec,
+        id: rec.id || `ATT-${rec.employeeId}-${rec.date}`,
+        updatedAt: now,
+      };
 
-    const attendance = this.getAttendance();
-    const map = new Map<string, AttendanceRecord>();
-
-    attendance.forEach(a => {
-      map.set(`${a.employeeId}_${a.date}`, a);
-    });
-
-    const now = new Date().toISOString();
-    records.forEach(r => {
-      map.set(`${r.employeeId}_${r.date}`, {
-        ...r,
-        updatedAt: now
-      });
-    });
-
-    const updated = Array.from(map.values());
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(updated));
-    this.logAudit('BULK_SAVE', 'ATTENDANCE', `حفظ جماعي لسجلات الحضور (${records.length} سجل)`);
-    this.notifyChange();
-
-    this.postToBackend('bulkSaveAttendance', records);
-    return { success: true, count: records.length };
-  }
-
-  public deleteAttendance(id: string): boolean {
-    const attendance = this.getAttendance();
-    const target = attendance.find(a => a.id === id);
-    if (!target) return false;
-
-    const filtered = attendance.filter(a => a.id !== id);
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(filtered));
-    this.logAudit('DELETE', 'ATTENDANCE', `حذف سجل حضور: ${target.employeeName} بتاريخ ${target.date}`);
-    this.notifyChange();
-
-    this.postToBackend('deleteAttendance', { id });
-    return true;
-  }
-
-  public deleteAttendanceRecord(id: string): boolean {
-    return this.deleteAttendance(id);
-  }
-
-  // ---------------- Quick Attendance Actions ----------------
-  public quickCheckIn(
-    employeeId: string,
-    date: string,
-    checkInTime: string,
-    forceStatus?: AttendanceStatus,
-    notes?: string
-  ): { success: boolean; record: AttendanceRecord } {
-    const employee = this.getEmployeeById(employeeId);
-    const settings = this.getSettings();
-    const existing = this.getAttendanceRecord(employeeId, date);
-
-    const startTime = employee?.workStartTime || settings.officialStartTime || '09:00';
-    const gracePeriod = settings.gracePeriodMinutes ?? 15;
-    const dayName = getArabicDayName(date);
-
-    let status: AttendanceStatus = forceStatus || 'حاضر';
-    let lateMinutes = 0;
-
-    if (!forceStatus && settings.autoCalculateStatus) {
-      const inMin = timeStringToMinutes(checkInTime);
-      const startMin = timeStringToMinutes(startTime);
-      if (inMin > startMin + gracePeriod) {
-        status = 'متأخر';
-        lateMinutes = inMin - startMin;
+      if (map.has(key)) {
+        list[map.get(key)!] = prepared;
+      } else {
+        list.push(prepared);
+        map.set(key, list.length - 1);
       }
-    } else if (forceStatus === 'متأخر') {
-      const inMin = timeStringToMinutes(checkInTime);
-      const startMin = timeStringToMinutes(startTime);
-      lateMinutes = inMin > startMin ? inMin - startMin : 15;
-    }
+    });
 
-    const newRecord: AttendanceRecord = {
-      id: existing?.id || `ATT-${employeeId}-${date}`,
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(list));
+    this.notifyChange();
+    this.pushPost('bulkSaveAttendance', records).catch(() => {});
+  }
+
+  public bulkMarkAttendance(empIds: string[], date: string, status: AttendanceStatus): { success: boolean; count: number } {
+    const employees = this.getEmployees();
+    const newRecords: AttendanceRecord[] = [];
+
+    empIds.forEach(id => {
+      const emp = employees.find(e => e.id === id);
+      if (emp) {
+        newRecords.push({
+          id: `ATT-${emp.id}-${date}`,
+          employeeId: emp.id,
+          employeeName: emp.name,
+          department: emp.department,
+          date,
+          dayName: getEgyptianDayName(date),
+          checkIn: status === 'حاضر' ? (emp.workStartTime || '07:30') : '',
+          checkOut: '',
+          workingHours: status === 'حاضر' ? (emp.workingHours || 8) : 0,
+          lateMinutes: 0,
+          earlyLeaveMinutes: 0,
+          overtimeHours: 0,
+          status,
+        });
+      }
+    });
+
+    this.bulkSaveAttendance(newRecords);
+    return { success: true, count: newRecords.length };
+  }
+
+  public quickCheckIn(employeeId: string, date: string, checkInTime?: string, statusOverride?: AttendanceStatus): { success: boolean; record: AttendanceRecord } {
+    const emp = this.getEmployees().find(e => e.id === employeeId);
+    const nowTime = checkInTime || getCairoCurrentTime();
+    const settings = this.getSettings();
+    const startTime = emp?.workStartTime || settings.officialStartTime || '07:30';
+
+    const [startH, startM] = startTime.split(':').map(Number);
+    const [inH, inM] = nowTime.split(':').map(Number);
+    const diffMinutes = (inH * 60 + inM) - (startH * 60 + startM);
+    const lateMinutes = Math.max(0, diffMinutes - (settings.gracePeriodMinutes || 15));
+    const status: AttendanceStatus = statusOverride || (lateMinutes > 0 ? 'متأخر' : 'حاضر');
+
+    const record: AttendanceRecord = {
+      id: `ATT-${employeeId}-${date}`,
       employeeId,
-      employeeName: employee?.name || existing?.employeeName || employeeId,
-      department: employee?.department || existing?.department || '',
+      employeeName: emp?.name || '',
+      department: emp?.department || '',
       date,
-      dayName,
-      checkIn: checkInTime,
-      checkOut: existing?.checkOut || '',
-      workingHours: 0,
-      lateMinutes,
+      dayName: getEgyptianDayName(date),
+      checkIn: nowTime,
+      checkOut: '',
+      workingHours: emp?.workingHours || 8,
+      lateMinutes: status === 'متأخر' ? Math.max(15, lateMinutes) : 0,
       earlyLeaveMinutes: 0,
       overtimeHours: 0,
       status,
-      notes: notes || existing?.notes,
-      checkInTimestamp: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      checkInTimestamp: getCairoNowISO(),
     };
 
-    if (newRecord.checkIn && newRecord.checkOut) {
-      const metrics = calculateAttendanceMetrics(
-        newRecord.checkIn,
-        newRecord.checkOut,
-        startTime,
-        employee?.workEndTime || settings.officialEndTime || '17:00',
-        gracePeriod,
-        employee?.workingHours || settings.standardDailyHours || 8
-      );
-      newRecord.workingHours = metrics.workingHours;
-      newRecord.earlyLeaveMinutes = metrics.earlyLeaveMinutes;
-      newRecord.overtimeHours = metrics.overtimeHours;
-    }
-
-    this.saveAttendance(newRecord);
-    return { success: true, record: newRecord };
+    this.saveAttendanceRecord(record);
+    return { success: true, record };
   }
 
-  public quickCheckOut(
-    employeeId: string,
-    date: string,
-    checkOutTime: string
-  ): { success: boolean; record?: AttendanceRecord } {
-    const employee = this.getEmployeeById(employeeId);
-    const settings = this.getSettings();
-    const existing = this.getAttendanceRecord(employeeId, date);
+  public quickCheckOut(employeeId: string, date: string, checkOutTime?: string): { success: boolean; record: AttendanceRecord } {
+    const list = this.getAttendance();
+    const existing = list.find(a => a.employeeId === employeeId && a.date === date);
+    const emp = this.getEmployees().find(e => e.id === employeeId);
+    const nowTime = checkOutTime || getCairoCurrentTime();
 
-    if (!existing) {
-      // Create new record with checkout
-      const rec: AttendanceRecord = {
-        id: `ATT-${employeeId}-${date}`,
-        employeeId,
-        employeeName: employee?.name || employeeId,
-        department: employee?.department || '',
-        date,
-        dayName: getArabicDayName(date),
-        checkIn: '',
-        checkOut: checkOutTime,
-        workingHours: 0,
-        lateMinutes: 0,
-        earlyLeaveMinutes: 0,
-        overtimeHours: 0,
-        status: 'حاضر',
-        checkOutTimestamp: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      this.saveAttendance(rec);
-      return { success: true, record: rec };
-    }
-
-    const startTime = employee?.workStartTime || settings.officialStartTime || '09:00';
-    const endTime = employee?.workEndTime || settings.officialEndTime || '17:00';
-    const grace = settings.gracePeriodMinutes ?? 15;
-    const stdHours = employee?.workingHours || settings.standardDailyHours || 8;
-
-    let workingHours = 0;
-    let earlyLeaveMinutes = 0;
-    let overtimeHours = 0;
-
-    if (existing.checkIn) {
-      const metrics = calculateAttendanceMetrics(
-        existing.checkIn,
-        checkOutTime,
-        startTime,
-        endTime,
-        grace,
-        stdHours
-      );
-      workingHours = metrics.workingHours;
-      earlyLeaveMinutes = metrics.earlyLeaveMinutes;
-      overtimeHours = metrics.overtimeHours;
-    }
-
-    const updated: AttendanceRecord = {
+    const record: AttendanceRecord = existing ? {
       ...existing,
-      checkOut: checkOutTime,
-      workingHours,
-      earlyLeaveMinutes,
-      overtimeHours,
-      checkOutTimestamp: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    this.saveAttendance(updated);
-    return { success: true, record: updated };
-  }
-
-  public quickMarkDayOff(employeeId: string, date: string, reason = 'عطلة أسبوعية'): void {
-    const employee = this.getEmployeeById(employeeId);
-    const rec: AttendanceRecord = {
+      checkOut: nowTime,
+      checkOutTimestamp: getCairoNowISO(),
+    } : {
       id: `ATT-${employeeId}-${date}`,
       employeeId,
-      employeeName: employee?.name || employeeId,
-      department: employee?.department || '',
+      employeeName: emp?.name || '',
+      department: emp?.department || '',
       date,
-      dayName: getArabicDayName(date),
+      dayName: getEgyptianDayName(date),
+      checkIn: emp?.workStartTime || '07:30',
+      checkOut: nowTime,
+      workingHours: emp?.workingHours || 8,
+      lateMinutes: 0,
+      earlyLeaveMinutes: 0,
+      overtimeHours: 0,
+      status: 'حاضر',
+      checkOutTimestamp: getCairoNowISO(),
+    };
+
+    this.saveAttendanceRecord(record);
+    return { success: true, record };
+  }
+
+  public bulkCheckOut(empIds: string[], date: string): { success: boolean; count: number } {
+    empIds.forEach(id => {
+      this.quickCheckOut(id, date);
+    });
+    return { success: true, count: empIds.length };
+  }
+
+  public quickMarkDayOff(employeeId: string, date: string, statusText: string = 'عطلة أسبوعية'): void {
+    const emp = this.getEmployees().find(e => e.id === employeeId);
+    this.saveAttendanceRecord({
+      id: `ATT-${employeeId}-${date}`,
+      employeeId,
+      employeeName: emp?.name || '',
+      department: emp?.department || '',
+      date,
+      dayName: getEgyptianDayName(date),
       checkIn: '',
       checkOut: '',
       workingHours: 0,
       lateMinutes: 0,
       earlyLeaveMinutes: 0,
       overtimeHours: 0,
-      status: reason === 'عطلة أسبوعية' ? 'عطلة أسبوعية' : 'راحة',
-      notes: reason,
-      updatedAt: new Date().toISOString()
-    };
-    this.saveAttendance(rec);
+      status: statusText as any,
+    });
   }
 
-  public quickMarkAbsent(
-    employeeId: string,
-    date: string,
-    category: AbsenceReasonCategory,
-    reason?: string
-  ): void {
-    const employee = this.getEmployeeById(employeeId);
-    const rec: AttendanceRecord = {
+  public quickMarkAbsent(employeeId: string, date: string, category?: string, reason?: string): void {
+    const emp = this.getEmployees().find(e => e.id === employeeId);
+    this.saveAttendanceRecord({
       id: `ATT-${employeeId}-${date}`,
       employeeId,
-      employeeName: employee?.name || employeeId,
-      department: employee?.department || '',
+      employeeName: emp?.name || '',
+      department: emp?.department || '',
       date,
-      dayName: getArabicDayName(date),
+      dayName: getEgyptianDayName(date),
       checkIn: '',
       checkOut: '',
       workingHours: 0,
@@ -600,251 +961,75 @@ class StorageService {
       overtimeHours: 0,
       status: 'غائب',
       absenceReasonCategory: category,
-      reason: reason || category,
-      notes: reason,
-      updatedAt: new Date().toISOString()
-    };
-    this.saveAttendance(rec);
+      reason,
+    });
   }
 
-  public quickMarkPermission(
-    employeeId: string,
-    date: string,
-    permData: { type: string; from: string; to: string; reason?: string }
-  ): void {
-    const employee = this.getEmployeeById(employeeId);
-    const fromMin = timeStringToMinutes(permData.from);
-    const toMin = timeStringToMinutes(permData.to);
-    const duration = toMin > fromMin ? toMin - fromMin : 60;
-
-    const rec: AttendanceRecord = {
+  public quickMarkPermission(employeeId: string, date: string, permData: any): void {
+    const emp = this.getEmployees().find(e => e.id === employeeId);
+    this.saveAttendanceRecord({
       id: `ATT-${employeeId}-${date}`,
       employeeId,
-      employeeName: employee?.name || employeeId,
-      department: employee?.department || '',
+      employeeName: emp?.name || '',
+      department: emp?.department || '',
       date,
-      dayName: getArabicDayName(date),
-      checkIn: permData.from,
-      checkOut: permData.to,
-      workingHours: +(duration / 60).toFixed(2),
+      dayName: getEgyptianDayName(date),
+      checkIn: '',
+      checkOut: '',
+      workingHours: emp?.workingHours || 8,
       lateMinutes: 0,
       earlyLeaveMinutes: 0,
       overtimeHours: 0,
       status: 'مأذونية',
-      permissionType: permData.type as PermissionType,
-      permissionFrom: permData.from,
-      permissionTo: permData.to,
-      permissionDurationMinutes: duration,
-      reason: permData.reason,
-      notes: `${permData.type} من ${permData.from} إلى ${permData.to}`,
-      updatedAt: new Date().toISOString()
-    };
-    this.saveAttendance(rec);
+      permissionType: typeof permData === 'string' ? permData : permData?.type || 'إذن خروج',
+      permissionFrom: permData?.from,
+      permissionTo: permData?.to,
+      reason: permData?.reason,
+    });
   }
 
-  public quickMarkLeave(
-    employeeId: string,
-    startDate: string,
-    endDate: string,
-    leaveType: LeaveType,
-    reason?: string
-  ): void {
-    const employee = this.getEmployeeById(employeeId);
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const daysCount = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1);
-
-    // Save in Leaves
-    const leaveRec: LeaveRecord = {
-      id: `LEV-${Date.now()}-${employeeId}`,
+  public quickMarkLeave(employeeId: string, startDate: string, endDate: string, leaveType: LeaveType, reason: string): void {
+    const emp = this.getEmployees().find(e => e.id === employeeId);
+    this.saveAttendanceRecord({
+      id: `ATT-${employeeId}-${startDate}`,
       employeeId,
-      employeeName: employee?.name || employeeId,
-      department: employee?.department || '',
+      employeeName: emp?.name || '',
+      department: emp?.department || '',
+      date: startDate,
+      dayName: getEgyptianDayName(startDate),
+      checkIn: '',
+      checkOut: '',
+      workingHours: 0,
+      lateMinutes: 0,
+      earlyLeaveMinutes: 0,
+      overtimeHours: 0,
+      status: 'إجازة',
+      leaveType,
+      leaveStartDate: startDate,
+      leaveEndDate: endDate,
+      reason,
+    });
+
+    this.saveLeave({
+      id: `LEV-${Date.now()}`,
+      employeeId,
+      employeeName: emp?.name || '',
+      department: emp?.department || '',
       leaveType,
       startDate,
       endDate,
-      daysCount,
+      daysCount: 1,
       status: 'مقبولة',
-      reason: reason || `إجازة ${leaveType}`,
-      createdAt: new Date().toISOString()
-    };
-    this.saveLeave(leaveRec);
-
-    // Mark daily records
-    const current = new Date(start);
-    while (current <= end) {
-      const dStr = current.toISOString().split('T')[0];
-      const attRec: AttendanceRecord = {
-        id: `ATT-${employeeId}-${dStr}`,
-        employeeId,
-        employeeName: employee?.name || employeeId,
-        department: employee?.department || '',
-        date: dStr,
-        dayName: getArabicDayName(dStr),
-        checkIn: '',
-        checkOut: '',
-        workingHours: 0,
-        lateMinutes: 0,
-        earlyLeaveMinutes: 0,
-        overtimeHours: 0,
-        status: 'إجازة',
-        leaveType,
-        leaveStartDate: startDate,
-        leaveEndDate: endDate,
-        leaveDaysCount: daysCount,
-        notes: `إجازة ${leaveType}`,
-        updatedAt: new Date().toISOString()
-      };
-      this.saveAttendance(attRec);
-      current.setDate(current.getDate() + 1);
-    }
-  }
-
-  public bulkMarkAttendance(
-    employeeIds: string[],
-    date: string,
-    status: AttendanceStatus,
-    checkIn = '09:00',
-    checkOut = '17:00'
-  ): { success: boolean; count: number } {
-    const records: AttendanceRecord[] = [];
-    const settings = this.getSettings();
-    const dayName = getArabicDayName(date);
-
-    employeeIds.forEach(empId => {
-      const employee = this.getEmployeeById(empId);
-      const startTime = employee?.workStartTime || settings.officialStartTime || '09:00';
-      const endTime = employee?.workEndTime || settings.officialEndTime || '17:00';
-      const isPresent = status === 'حاضر' || status === 'متأخر';
-
-      records.push({
-        id: `ATT-${empId}-${date}`,
-        employeeId: empId,
-        employeeName: employee?.name || empId,
-        department: employee?.department || '',
-        date,
-        dayName,
-        checkIn: isPresent ? checkIn : '',
-        checkOut: isPresent ? checkOut : '',
-        workingHours: isPresent ? 8 : 0,
-        lateMinutes: status === 'متأخر' ? 15 : 0,
-        earlyLeaveMinutes: 0,
-        overtimeHours: 0,
-        status,
-        updatedAt: new Date().toISOString()
-      });
+      reason,
+      createdAt: getCairoNowISO(),
     });
-
-    return this.bulkSaveAttendance(records);
   }
 
-  public bulkCheckOut(
-    employeeIds: string[],
-    date: string,
-    checkOutTime = '17:00'
-  ): { success: boolean; count: number } {
-    let count = 0;
-    employeeIds.forEach(empId => {
-      const res = this.quickCheckOut(empId, date, checkOutTime);
-      if (res.success) count++;
-    });
-    return { success: true, count };
-  }
-
-  // ---------------- Leaves ----------------
-  public getLeaves(): LeaveRecord[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.LEAVES);
-    if (!raw) return [];
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-
-  public saveLeave(leave: LeaveRecord): { success: boolean; message?: string } {
-    const leaves = this.getLeaves();
-    const existingIdx = leaves.findIndex(l => l.id === leave.id);
-
-    let updated: LeaveRecord[];
-    if (existingIdx === -1) {
-      updated = [...leaves, leave];
-      this.logAudit(
-        'CREATE',
-        'LEAVE',
-        `طلب إجازة جديدة: ${leave.employeeName} (${leave.leaveType}) من ${leave.startDate} إلى ${leave.endDate}`
-      );
-    } else {
-      updated = [...leaves];
-      updated[existingIdx] = leave;
-      this.logAudit('UPDATE', 'LEAVE', `تحديث طلب إجازة: ${leave.employeeName} (${leave.status})`);
-    }
-
-    localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(updated));
+  public deleteAttendanceRecord(id: string): void {
+    const list = this.getAttendance().filter(a => a.id !== id);
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(list));
     this.notifyChange();
-
-    this.postToBackend('saveLeave', leave);
-    return { success: true };
-  }
-
-  public deleteLeave(id: string): boolean {
-    const leaves = this.getLeaves();
-    const target = leaves.find(l => l.id === id);
-    if (!target) return false;
-
-    const filtered = leaves.filter(l => l.id !== id);
-    localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(filtered));
-    this.logAudit('DELETE', 'LEAVE', `حذف طلب إجازة: ${target.employeeName}`);
-    this.notifyChange();
-
-    this.postToBackend('deleteLeave', { id });
-    return true;
-  }
-
-  // ---------------- Permissions ----------------
-  public getPermissions(): any[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.PERMISSIONS);
-    if (!raw) return [];
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-
-  public savePermission(perm: any): { success: boolean; message?: string } {
-    const permissions = this.getPermissions();
-    const idx = permissions.findIndex(p => p.id === perm.id);
-
-    let updated: any[];
-    if (idx === -1) {
-      updated = [...permissions, perm];
-      this.logAudit('CREATE', 'PERMISSION' as any, `تسجيل إذن عمل للموظف: ${perm.employeeName} (${perm.date})`);
-    } else {
-      updated = [...permissions];
-      updated[idx] = perm;
-      this.logAudit('UPDATE', 'PERMISSION' as any, `تحديث إذن عمل: ${perm.employeeName} (${perm.date})`);
-    }
-
-    localStorage.setItem(STORAGE_KEYS.PERMISSIONS, JSON.stringify(updated));
-    this.notifyChange();
-
-    this.postToBackend('savePermission', perm);
-    return { success: true };
-  }
-
-  public deletePermission(id: string): boolean {
-    const permissions = this.getPermissions();
-    const target = permissions.find(p => p.id === id);
-    if (!target) return false;
-
-    const filtered = permissions.filter(p => p.id !== id);
-    localStorage.setItem(STORAGE_KEYS.PERMISSIONS, JSON.stringify(filtered));
-    this.logAudit('DELETE', 'PERMISSION' as any, `حذف إذن عمل: ${target.employeeName}`);
-    this.notifyChange();
-
-    this.postToBackend('deletePermission', { id });
-    return true;
+    this.pushPost('deleteAttendance', { id }).catch(() => {});
   }
 
   // ---------------- Users ----------------
@@ -859,71 +1044,71 @@ class StorageService {
   }
 
   public saveUser(user: User): { success: boolean; message?: string } {
-    const users = this.getUsers();
-    const cleanUsername = user.username.trim().toLowerCase();
-    const existingIdx = users.findIndex(
-      u => u.id === user.id || u.username.toLowerCase() === cleanUsername
-    );
-
-    let updated: User[];
-    if (existingIdx === -1) {
-      updated = [...users, { ...user, username: cleanUsername }];
-      this.logAudit('CREATE', 'USER', `إضافة مستخدم جديد للنظام: ${user.fullName} (@${cleanUsername})`);
+    const list = this.getUsers();
+    const idx = list.findIndex(u => u.id === user.id || u.username.toLowerCase() === user.username.toLowerCase());
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...user };
+      this.logAudit('UPDATE', 'USER', `تعديل بيانات المستخدم: ${user.fullName} (@${user.username})`);
     } else {
-      updated = [...users];
-      updated[existingIdx] = { ...user, username: cleanUsername };
-      this.logAudit('UPDATE', 'USER', `تعديل بيانات المستخدم: ${user.fullName} (@${cleanUsername})`);
+      const newUser = {
+        ...user,
+        id: user.id || `USR-${Date.now().toString().slice(-4)}`,
+        createdAt: user.createdAt || getCairoNowISO(),
+      };
+      list.push(newUser);
+      this.logAudit('CREATE', 'USER', `إضافة مستخدم جديد: ${newUser.fullName} (@${newUser.username})`);
     }
-
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(list));
     this.notifyChange();
-
-    this.postToBackend('saveUser', user);
-    return { success: true };
+    this.pushPost('saveUser', user).catch(() => {});
+    return { success: true, message: 'تم حفظ المستخدم بنجاح' };
   }
 
-  public deleteUser(id: string): boolean {
-    const users = this.getUsers();
-    const target = users.find(u => u.id === id);
-    if (!target) return false;
-
-    const currentUser = this.getCurrentUser();
-    if (currentUser && currentUser.id === id) {
-      return false;
-    }
-
-    const filtered = users.filter(u => u.id !== id);
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(filtered));
-    this.logAudit('DELETE', 'USER', `حذف مستخدم: ${target.fullName} (@${target.username})`);
+  public deleteUser(id: string): { success: boolean; message?: string } {
+    const list = this.getUsers().filter(u => u.id !== id);
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(list));
+    this.logAudit('DELETE', 'USER', `حذف مستخدم النظام: ${id}`);
     this.notifyChange();
-
-    this.postToBackend('deleteUser', { id });
-    return true;
+    this.pushPost('deleteUser', { id }).catch(() => {});
+    return { success: true, message: 'تم حذف المستخدم بنجاح' };
   }
 
-  // ---------------- Settings ----------------
-  public getSettings(): SystemSettings {
-    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    if (!raw) return { ...INITIAL_SETTINGS, googleAppsScriptUrl: DEFAULT_BACKEND_URL };
+  // ---------------- Leaves & Permissions ----------------
+  public getLeaves(): LeaveRecord[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.LEAVES);
+    if (!raw) return [];
     try {
-      return { ...INITIAL_SETTINGS, ...JSON.parse(raw) };
+      return JSON.parse(raw);
     } catch {
-      return { ...INITIAL_SETTINGS, googleAppsScriptUrl: DEFAULT_BACKEND_URL };
+      return [];
     }
   }
 
-  public saveSettings(settings: SystemSettings): { success: boolean; message?: string } {
-    const merged = { ...this.getSettings(), ...settings };
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
-    this.logAudit('UPDATE', 'SETTINGS', 'تحديث إعدادات النظام ومواعيد الدوام وسياسات الحضور');
-    this.startAutoSync();
+  public saveLeave(leave: LeaveRecord): { success: boolean; message?: string } {
+    const list = this.getLeaves();
+    const idx = list.findIndex(l => l.id === leave.id);
+    if (idx >= 0) {
+      list[idx] = leave;
+    } else {
+      list.unshift({ ...leave, id: leave.id || `LEV-${Date.now()}`, createdAt: getCairoNowISO() });
+    }
+    localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(list));
+    this.logAudit('CREATE', 'LEAVE', `طلب إجازة للموظف: ${leave.employeeName} (${leave.leaveType})`);
     this.notifyChange();
-
-    this.postToBackend('saveSettings', merged);
-    return { success: true };
+    this.pushPost('saveLeave', leave).catch(() => {});
+    return { success: true, message: 'تم حفظ طلب الإجازة بنجاح' };
   }
 
-  // ---------------- Audit Logs ----------------
+  public deleteLeave(id: string): { success: boolean; message?: string } {
+    const list = this.getLeaves().filter(l => l.id !== id);
+    localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(list));
+    this.logAudit('DELETE', 'LEAVE', `حذف سجل إجازة: ${id}`);
+    this.notifyChange();
+    this.pushPost('deleteLeave', { id }).catch(() => {});
+    return { success: true, message: 'تم حذف سجل الإجازة بنجاح' };
+  }
+
+  // ---------------- Audit Log ----------------
   public getAuditLogs(): AuditLogEntry[] {
     const raw = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
     if (!raw) return [];
@@ -936,48 +1121,47 @@ class StorageService {
 
   public logAudit(
     action: string,
-    entity: 'ATTENDANCE' | 'EMPLOYEE' | 'LEAVE' | 'USER' | 'SETTINGS' | 'AUTH' | 'SYNC' | string,
+    entity: AuditLogEntry['entity'] = 'ATTENDANCE',
     details: string,
+    oldValue?: string,
+    newValue?: string,
     targetId?: string
   ): void {
-    const currentUser = this.getCurrentUser();
-    const log: AuditLogEntry = {
-      id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      timestamp: new Date().toISOString(),
-      username: currentUser?.username || 'system',
-      userRole: currentUser?.role || 'Admin',
-      performedBy: currentUser?.fullName || 'النظام',
+    const user = this.getCurrentUser();
+    const entry: AuditLogEntry = {
+      id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: getCairoNowISO(),
+      username: user?.username || 'admin',
+      userRole: user?.role || 'Admin',
+      performedBy: user?.fullName || 'مدير النظام',
       action,
-      entity: entity as any,
+      entity,
       targetId,
-      details
+      details,
+      oldValue,
+      newValue,
     };
 
     const logs = this.getAuditLogs();
-    const updated = [log, ...logs].slice(0, 500);
-    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(updated));
-
-    this.postToBackend('addAuditLog', log);
+    logs.unshift(entry);
+    if (logs.length > 500) logs.pop();
+    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs));
   }
 
-  // ---------------- Sync State ----------------
+  // ---------------- Cloud Sync (Google Sheets & Apps Script) ----------------
   public getSyncStatus(): SyncStatus {
     const raw = localStorage.getItem(STORAGE_KEYS.SYNC_STATUS);
     if (!raw) {
       return {
+        lastSyncTime: null,
         status: 'idle',
-        connectedToGoogleSheets: true,
-        lastSyncTime: null
+        connectedToGoogleSheets: false,
       };
     }
     try {
       return JSON.parse(raw);
     } catch {
-      return {
-        status: 'idle',
-        connectedToGoogleSheets: true,
-        lastSyncTime: null
-      };
+      return { lastSyncTime: null, status: 'idle', connectedToGoogleSheets: false };
     }
   }
 
@@ -985,101 +1169,90 @@ class StorageService {
     return this.getSyncStatus();
   }
 
-  public setSyncStatus(status: Partial<SyncStatus>): void {
-    const current = this.getSyncStatus();
-    const updated = { ...current, ...status };
-    localStorage.setItem(STORAGE_KEYS.SYNC_STATUS, JSON.stringify(updated));
+  private setSyncStatus(status: SyncStatus): void {
+    localStorage.setItem(STORAGE_KEYS.SYNC_STATUS, JSON.stringify(status));
     this.notifyChange();
   }
 
-  // ---------------- Backend Direct API Sync ----------------
-  public async syncWithGoogleSheets(silent = false): Promise<{ success: boolean; message?: string }> {
+  public async syncWithGoogleSheets(isBackground = false): Promise<boolean> {
     const settings = this.getSettings();
-    const url = (settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL).trim();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
 
-    if (!url || url.length < 10) {
-      return { success: false, message: 'عنوان الخادم غير مهيأ' };
+    if (!scriptUrl || scriptUrl.length < 15) {
+      this.setSyncStatus({
+        lastSyncTime: null,
+        status: 'idle',
+        connectedToGoogleSheets: false,
+        errorMessage: 'لم يتم ربط رابط Google Apps Script بعد',
+      });
+      return false;
     }
 
-    if (!silent) {
-      this.setSyncStatus({ status: 'syncing' });
+    if (!isBackground) {
+      this.setSyncStatus({
+        ...this.getSyncStatus(),
+        status: 'syncing',
+      });
     }
 
     try {
-      const response = await fetch(`${url}?action=getAll`);
-      if (!response.ok) {
-        throw new Error(`خطأ اتصال: ${response.status}`);
-      }
+      const response = await fetch(`${scriptUrl}?action=getAll&t=${Date.now()}`);
+      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
-      const resJson = await response.json();
+      const result = await response.json();
+      if (result.status === 'success' && result.data) {
+        const d = result.data;
+        if (Array.isArray(d.employees)) localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(d.employees));
+        if (Array.isArray(d.attendance)) localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(d.attendance));
+        if (Array.isArray(d.users)) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(d.users));
+        if (Array.isArray(d.leaves)) localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(d.leaves));
+        if (Array.isArray(d.students)) localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(d.students));
+        if (Array.isArray(d.studentAttendance)) localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(d.studentAttendance));
+        if (Array.isArray(d.behaviorTypes)) localStorage.setItem(STORAGE_KEYS.BEHAVIOR_TYPES, JSON.stringify(d.behaviorTypes));
+        if (Array.isArray(d.behaviorViolations)) localStorage.setItem(STORAGE_KEYS.BEHAVIOR_VIOLATIONS, JSON.stringify(d.behaviorViolations));
+        if (Array.isArray(d.schedule)) localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(d.schedule));
+        if (Array.isArray(d.lessonContent)) localStorage.setItem(STORAGE_KEYS.LESSON_CONTENT, JSON.stringify(d.lessonContent));
+        if (Array.isArray(d.payroll)) localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(d.payroll));
 
-      if (resJson.status === 'success' && resJson.data) {
-        const { employees, attendance, leaves, permissions, settings: backendSettings, users } = resJson.data;
-
-        if (Array.isArray(employees) && employees.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
-        }
-        if (Array.isArray(attendance)) {
-          localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(attendance));
-        }
-        if (Array.isArray(leaves)) {
-          localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(leaves));
-        }
-        if (Array.isArray(permissions)) {
-          localStorage.setItem(STORAGE_KEYS.PERMISSIONS, JSON.stringify(permissions));
-        }
-        if (Array.isArray(users) && users.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-        }
-        if (backendSettings && Object.keys(backendSettings).length > 0) {
-          const currentSettings = this.getSettings();
-          const merged = { ...currentSettings, ...backendSettings };
-          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
-        }
-
-        const now = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+        const nowIso = getCairoNowISO();
         this.setSyncStatus({
+          lastSyncTime: nowIso,
           status: 'success',
-          lastSyncTime: now,
           connectedToGoogleSheets: true,
-          errorMessage: undefined
+          syncedRecordsCount: (d.employees?.length || 0) + (d.students?.length || 0) + (d.attendance?.length || 0),
         });
 
         this.notifyChange();
-        return { success: true, message: 'تمت المزامنة بنجاح مع الخادم' };
+        return true;
       } else {
-        throw new Error(resJson.message || 'خطأ في معالجة البيانات من الخادم');
+        throw new Error(result.message || 'فشل استرجاع البيانات من السكربت');
       }
     } catch (err: any) {
-      console.warn('Sync failed:', err);
+      console.warn('Sync failed:', err.message);
       this.setSyncStatus({
+        ...this.getSyncStatus(),
         status: 'error',
-        errorMessage: err.message || 'تعذر الاتصال بالخادم',
-        connectedToGoogleSheets: false
+        errorMessage: err.message || 'تعذر الاتصال بـ Google Sheets',
       });
-      return { success: false, message: err.message || 'فشلت المزامنة' };
+      return false;
     }
   }
 
-  private async postToBackend(action: string, data: any): Promise<void> {
+  private async pushPost(action: string, data: any): Promise<void> {
     const settings = this.getSettings();
-    const url = (settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL).trim();
-
-    if (!url || url.length < 10) return;
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+    if (!scriptUrl || scriptUrl.length < 15 || !navigator.onLine) return;
 
     try {
-      await fetch(url, {
+      await fetch(scriptUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8'
-        },
-        body: JSON.stringify({ action, data })
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, data }),
       });
     } catch (e) {
-      console.warn(`Failed async post for ${action}:`, e);
+      console.warn(`Background push for action "${action}" failed:`, e);
     }
   }
 }
 
 export const storageService = new StorageService();
-storageService.initialize();

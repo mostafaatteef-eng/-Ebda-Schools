@@ -1,17 +1,344 @@
-import { AttendanceRecord, AuditLogEntry, Employee, LeaveRecord, SystemSettings, User } from '../types';
+import {
+  AcademicStage,
+  AttendanceRecord,
+  AuditLogEntry,
+  BehaviorScoreRule,
+  BehaviorType,
+  DepartmentItem,
+  Employee,
+  LeaveRecord,
+  PayrollRule,
+  PermissionMatrix,
+  SchoolHoliday,
+  Student,
+  SystemSettings,
+  User,
+  UserRole,
+} from '../types';
+
+export const DEFAULT_PERMISSION_MATRIX: Record<UserRole, PermissionMatrix> = {
+  Admin: {
+    canViewStudents: true,
+    canEditStudents: true,
+    canImportStudents: true,
+    canTakeStudentAttendance: true,
+    canEditStudentAttendance: true,
+    canCreateViolation: true,
+    canApproveViolation: true,
+    canViewPayroll: true,
+    canProcessPayroll: true,
+    canApprovePayroll: true,
+    canManageSchedule: true,
+    canAddLessonContent: true,
+    canViewParentPortal: true,
+    canManageSettings: true,
+    canViewAuditLogs: true,
+  },
+  HR: {
+    canViewStudents: true,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: true,
+    canEditStudentAttendance: false,
+    canCreateViolation: false,
+    canApproveViolation: false,
+    canViewPayroll: true,
+    canProcessPayroll: true,
+    canApprovePayroll: true,
+    canManageSchedule: false,
+    canAddLessonContent: false,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: true,
+  },
+  Supervisor: {
+    canViewStudents: true,
+    canEditStudents: true,
+    canImportStudents: false,
+    canTakeStudentAttendance: true,
+    canEditStudentAttendance: true,
+    canCreateViolation: true,
+    canApproveViolation: true,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: true,
+    canAddLessonContent: true,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  Teacher: {
+    canViewStudents: true,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: true,
+    canEditStudentAttendance: true,
+    canCreateViolation: true,
+    canApproveViolation: false,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: true,
+    canAddLessonContent: true,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  StudentAffairs: {
+    canViewStudents: true,
+    canEditStudents: true,
+    canImportStudents: true,
+    canTakeStudentAttendance: true,
+    canEditStudentAttendance: true,
+    canCreateViolation: true,
+    canApproveViolation: false,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: true,
+    canAddLessonContent: false,
+    canViewParentPortal: true,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  TeacherAffairs: {
+    canViewStudents: false,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: false,
+    canEditStudentAttendance: false,
+    canCreateViolation: false,
+    canApproveViolation: false,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: true,
+    canAddLessonContent: false,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  SocialSpecialist: {
+    canViewStudents: true,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: false,
+    canEditStudentAttendance: false,
+    canCreateViolation: true,
+    canApproveViolation: true,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: false,
+    canAddLessonContent: false,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  BehaviorOfficer: {
+    canViewStudents: true,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: false,
+    canEditStudentAttendance: false,
+    canCreateViolation: true,
+    canApproveViolation: true,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: false,
+    canAddLessonContent: false,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  PayrollOfficer: {
+    canViewStudents: false,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: false,
+    canEditStudentAttendance: false,
+    canCreateViolation: false,
+    canApproveViolation: false,
+    canViewPayroll: true,
+    canProcessPayroll: true,
+    canApprovePayroll: false,
+    canManageSchedule: false,
+    canAddLessonContent: false,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  Parent: {
+    canViewStudents: false, // Access limited to their own children via Portal
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: false,
+    canEditStudentAttendance: false,
+    canCreateViolation: false,
+    canApproveViolation: false,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: false,
+    canAddLessonContent: false,
+    canViewParentPortal: true,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  Employee: {
+    canViewStudents: false,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: false,
+    canEditStudentAttendance: false,
+    canCreateViolation: false,
+    canApproveViolation: false,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: false,
+    canAddLessonContent: false,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+  Viewer: {
+    canViewStudents: true,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: false,
+    canEditStudentAttendance: false,
+    canCreateViolation: false,
+    canApproveViolation: false,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: true,
+    canAddLessonContent: false,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
+};
+
+export const DEFAULT_DEPARTMENTS: DepartmentItem[] = [
+  { id: 'DEP001', name: 'هيئة التدريس والتعليم', managerName: 'الناظر الأكاديمي', description: 'المعلمون والمعلمات لكافة التخصصات', isActive: true },
+  { id: 'DEP002', name: 'شؤون الطلاب والتسجيل', managerName: 'مسؤول شؤون الطلاب', description: 'ملفات الطلاب والتسجيل والتحويلات', isActive: true },
+  { id: 'DEP003', name: 'الإدارة العامة والتوجيه', managerName: 'مدير المدرسة', description: 'القيادة الإدارية والإشراف العام', isActive: true },
+  { id: 'DEP004', name: 'الموارد البشرية وشؤون العاملين', managerName: 'مدير الموارد البشرية', description: 'الحضور، المرتبات، الإجازات للموظفين والمعلمين', isActive: true },
+  { id: 'DEP005', name: 'الإشراف السلوكي والتربوي', managerName: 'الأخصائي الاجتماعي', description: 'الانضباط المدرسي والمخالفات ومتابعة أولياء الأمور', isActive: true },
+  { id: 'DEP006', name: 'الشؤون المالية والحسابات', managerName: 'المحاسب المالي', description: 'المرتبات والمصروفات المدرسية', isActive: true },
+  { id: 'DEP007', name: 'الخدمات المعاونة والأمن', managerName: 'مشرف الخدمات', description: 'أمن المدرسة، النظافة، والصيانة', isActive: true },
+];
+
+export const DEFAULT_STAGES: AcademicStage[] = [
+  {
+    id: 'STAGE_SEC',
+    name: 'المرحلة الثانوية',
+    grades: [
+      { id: 'G_SEC_1', name: 'الصف الأول الثانوي', classrooms: ['فصل 1', 'فصل 2', 'فصل 3', 'فصل 4'] },
+      { id: 'G_SEC_2', name: 'الصف الثاني الثانوي', classrooms: ['فصل 1', 'فصل 2', 'فصل 3'] },
+      { id: 'G_SEC_3', name: 'الصف الثالث الثانوي', classrooms: ['فصل 1', 'فصل 2', 'فصل 3'] },
+    ],
+  },
+  {
+    id: 'STAGE_PREP',
+    name: 'المرحلة الإعدادية',
+    grades: [
+      { id: 'G_PREP_1', name: 'الصف الأول الإعدادي', classrooms: ['فصل 1', 'فصل 2', 'فصل 3'] },
+      { id: 'G_PREP_2', name: 'الصف الثاني الإعدادي', classrooms: ['فصل 1', 'فصل 2'] },
+      { id: 'G_PREP_3', name: 'الصف الثالث الإعدادي', classrooms: ['فصل 1', 'فصل 2'] },
+    ],
+  },
+  {
+    id: 'STAGE_PRI',
+    name: 'المرحلة الابتدائية',
+    grades: [
+      { id: 'G_PRI_1', name: 'الصف الأول الابتدائي', classrooms: ['فصل 1', 'فصل 2', 'فصل 3'] },
+      { id: 'G_PRI_2', name: 'الصف الثاني الابتدائي', classrooms: ['فصل 1', 'فصل 2'] },
+      { id: 'G_PRI_3', name: 'الصف الثالث الابتدائي', classrooms: ['فصل 1', 'فصل 2'] },
+    ],
+  },
+];
+
+export const DEFAULT_HOLIDAYS: SchoolHoliday[] = [
+  { id: 'HOL001', name: 'عيد القوات المسلحة (6 أكتوبر)', startDate: '2026-10-06', endDate: '2026-10-06', affectsAbsenceCalculation: false },
+  { id: 'HOL002', name: 'المولد النبوي الشريف', startDate: '2026-09-04', endDate: '2026-09-04', affectsAbsenceCalculation: false },
+  { id: 'HOL003', name: 'عيد الشرطة وثورة 25 يناير', startDate: '2026-01-25', endDate: '2026-01-25', affectsAbsenceCalculation: false },
+  { id: 'HOL004', name: 'إجازة نصف العام الدراسي', startDate: '2026-01-24', endDate: '2026-02-05', affectsAbsenceCalculation: false },
+  { id: 'HOL005', name: 'عيد الفطر المبارك', startDate: '2026-03-20', endDate: '2026-03-23', affectsAbsenceCalculation: false },
+  { id: 'HOL006', name: 'عيد تحرير سيناء', startDate: '2026-04-25', endDate: '2026-04-25', affectsAbsenceCalculation: false },
+  { id: 'HOL007', name: 'عيد العمال وشم النسيم', startDate: '2026-05-01', endDate: '2026-05-04', affectsAbsenceCalculation: false },
+  { id: 'HOL008', name: 'عيد الأضحى المبارك', startDate: '2026-05-26', endDate: '2026-05-30', affectsAbsenceCalculation: false },
+  { id: 'HOL009', name: 'ثورة 30 يونيو', startDate: '2026-06-30', endDate: '2026-06-30', affectsAbsenceCalculation: false },
+];
+
+export const DEFAULT_BEHAVIOR_TYPES: BehaviorType[] = [
+  { id: 'BEH001', name: 'التأخر المتكرر عن الطابور أو الحصة', category: 'انضباط مدرسي', severity: 'بسيطة', points: 3, weight: 3, defaultAction: 'تنبيه شفوي وتسجيل التأخير بالدقائق', notifyParent: false, requiresAdminReview: false, isActive: true, sortOrder: 1 },
+  { id: 'BEH002', name: 'عدم الالتزام بالزي المدرسي أو المظهر اللائق', category: 'مظهر وانضباط', severity: 'بسيطة', points: 2, weight: 2, defaultAction: 'تنبيه شفوي وتعهد بالالتزام', notifyParent: false, requiresAdminReview: false, isActive: true, sortOrder: 2 },
+  { id: 'BEH003', name: 'استخدام الهاتف أثناء الحصة بدون إذن', category: 'سلوكية داخل الفصل', severity: 'متوسطة', points: 5, weight: 5, defaultAction: 'مصادرة الهاتف حتى نهاية اليوم الدراسي', notifyParent: true, requiresAdminReview: false, isActive: true, sortOrder: 3 },
+  { id: 'BEH004', name: 'عدم الالتزام بتعليمات المعلم أو إثارة الفوضى', category: 'سلوكية داخل الفصل', severity: 'متوسطة', points: 5, weight: 5, defaultAction: 'إنذار كتابي وتكليف إضافي', notifyParent: true, requiresAdminReview: false, isActive: true, sortOrder: 4 },
+  { id: 'BEH005', name: 'الهروب من الحصة أو مغادرة المدرسة', category: 'انضباط مدرسي', severity: 'شديدة', points: 10, weight: 10, defaultAction: 'استدعاء فوري لولي الأمر وإنذار بالفصل', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 5 },
+  { id: 'BEH006', name: 'التعدي اللفظي أو استخدام ألفاظ غير لائقة', category: 'أخلاقية وتربوية', severity: 'شديدة', points: 10, weight: 10, defaultAction: 'اعتذار رسمي وتعهد كتابي وإخطار ولي الأمر', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 6 },
+  { id: 'BEH007', name: 'التعدي الجسدي أو التشاجر العنيف', category: 'خطيرة', severity: 'خطيرة جداً', points: 20, weight: 20, defaultAction: 'فصل مؤقت 3 أيام واستدعاء ولي الأمر للتحقيق', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 7 },
+  { id: 'BEH008', name: 'التعدي على المعلم أو الكادر الإداري', category: 'خطيرة', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'إحالة لمجلس التأديب مع الفصل الإداري الفوري', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 8 },
+  { id: 'BEH009', name: 'إتلاف مرافق المدرسة أو الأجهزة والمقاعد', category: 'ممتلكات عامة', severity: 'شديدة', points: 15, weight: 15, defaultAction: 'إلزام ولي الأمر بالتعويض المالي وإنذار رسمي', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 9 },
+];
+
+export const DEFAULT_BEHAVIOR_RULES: BehaviorScoreRule = {
+  initialScore: 100,
+  minScore: 0,
+  maxScore: 100,
+  excellentThreshold: 90,
+  goodThreshold: 75,
+  warningThreshold: 60,
+  dangerThreshold: 50,
+};
+
+export const DEFAULT_PAYROLL_RULES: PayrollRule = {
+  workDaysPerMonth: 26,
+  calculationMethod: 'work_days',
+  absenceDeductionMultiplier: 1.0, // خصم يوم لكل يوم غياب بدون عذر
+  lateMinuteDeductionRate: 1.0, // معامل خصم دقيقة التأخير بعد فترة السماح
+  lateGraceMinutes: 15,
+  overtimeRate: 1.5,
+  maxOvertimeHoursPerMonth: 40,
+  enableSocialInsuranceDeduction: true,
+  socialInsuranceRate: 11, // حصة الموظف في التأمينات الاجتماعية بمصر
+};
 
 export const INITIAL_SETTINGS: SystemSettings = {
-  companyName: 'نظام إدارة الحضور والانصراف والموارد البشرية',
-  officialStartTime: '09:00',
-  officialEndTime: '17:00',
+  schoolName: 'المدارس الوطنية للعلوم التقنية - NTSS',
+  companyName: 'المدارس الوطنية للعلوم التقنية - NTSS',
+  schoolAddress: 'جمهورية مصر العربية - القاهرة',
+  schoolPhone: '+20 2 12345678',
+  schoolEmail: 'contact@ntss-schools.edu.eg',
+  currentAcademicYear: '2025/2026',
+  currentTerm: 'الترم الأول',
+  country: 'جمهورية مصر العربية',
+  currency: 'ج.م',
+  timeZone: 'Africa/Cairo',
+  defaultLanguage: 'العربية',
+  
+  officialStartTime: '07:30',
+  officialEndTime: '14:30',
   gracePeriodMinutes: 15,
-  standardDailyHours: 8,
+  standardDailyHours: 7,
   weekendDays: ['الجمعة', 'السبت'],
-  overtimeRate: 1.5,
+  
   annualLeaveAllowance: 21,
   sickLeaveAllowance: 15,
   emergencyLeaveAllowance: 6,
-  autoCalculateStatus: true,
+  
+  stages: DEFAULT_STAGES,
+  departments: DEFAULT_DEPARTMENTS,
+  holidays: DEFAULT_HOLIDAYS,
+  behaviorScoreRules: DEFAULT_BEHAVIOR_RULES,
+  payrollRules: DEFAULT_PAYROLL_RULES,
+  rolePermissions: DEFAULT_PERMISSION_MATRIX,
+  
   googleSheetsUrl: '',
   googleAppsScriptUrl:
     ((import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL as string) ||
@@ -19,25 +346,18 @@ export const INITIAL_SETTINGS: SystemSettings = {
   googleSheetWebAppUrl:
     ((import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL as string) ||
     'https://script.google.com/macros/s/AKfycbzw0kggQMGHdusMyKZOuqMC8eLiBzGccm7e7tdZbnMjvyBDqXPgI5f0tiJPKMFYAoln/exec',
-  googleClientId: '',
   spreadsheetId: ((import.meta as any).env?.VITE_SPREADSHEET_ID as string) || '',
+  autoCalculateStatus: true,
   autoSyncIntervalMinutes: 5,
   enableAuditLog: true,
 };
 
-// Production: No hardcoded demo employees - clean empty state
 export const INITIAL_EMPLOYEES: Employee[] = [];
-
-// Production: No hardcoded demo users - users are loaded from Google Sheets Users tab
 export const INITIAL_USERS: User[] = [];
-
-// Production: No hardcoded demo leaves
 export const INITIAL_LEAVES: LeaveRecord[] = [];
-
-// Production: No hardcoded demo audit logs
 export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [];
+export const INITIAL_STUDENTS: Student[] = [];
 
-// Production: No mock attendance generator
 export function generateInitialAttendanceRecords(): AttendanceRecord[] {
   return [];
 }

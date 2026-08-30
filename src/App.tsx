@@ -6,16 +6,22 @@ import {
   LeaveRecord,
   SyncState,
   SystemSettings,
-  User
+  User,
 } from './types';
 import { storageService } from './services/storageService';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { DashboardView } from './components/dashboard/DashboardView';
+import { StudentsView } from './components/students/StudentsView';
+import { StudentAttendanceView } from './components/students/StudentAttendanceView';
+import { BehaviorView } from './components/behavior/BehaviorView';
+import { TeacherPortalView } from './components/schedule/TeacherPortalView';
+import { ParentPortalView } from './components/parent/ParentPortalView';
 import { DailyAttendanceView } from './components/attendance/DailyAttendanceView';
 import { MonthlyMatrixView } from './components/attendance/MonthlyMatrixView';
 import { AnnualSummaryView } from './components/summary/AnnualSummaryView';
 import { EmployeesView } from './components/employees/EmployeesView';
+import { PayrollView } from './components/payroll/PayrollView';
 import { LeavesView } from './components/leaves/LeavesView';
 import { ReportsView } from './components/reports/ReportsView';
 import { UsersView } from './components/users/UsersView';
@@ -61,6 +67,89 @@ export default function App() {
   };
 
   const renderActiveView = () => {
+    // 1. Strict Payroll Guard: ADMIN ONLY
+    if (activeTab === 'payroll' && currentUser?.role !== 'Admin') {
+      return (
+        <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-rose-200 shadow-xs space-y-4 my-12">
+          <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto text-2xl font-bold">
+            🔒
+          </div>
+          <h2 className="text-lg font-black text-slate-900">غير مصرح بالوصول إلى مسير الرواتب</h2>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            الوصول إلى قسم الرواتب والأمور المالية مخصص حصرياً لمدير النظام (Admin) للحفاظ على سرية البيانات المالية.
+          </p>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className="px-5 py-2.5 bg-[#008e8b] hover:bg-[#007775] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            العودة إلى لوحة التحكم
+          </button>
+        </div>
+      );
+    }
+
+    // 2. Strict User / Settings Management Guard
+    if ((activeTab === 'users' || activeTab === 'settings') && currentUser?.role !== 'Admin') {
+      return (
+        <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-rose-200 shadow-xs space-y-4 my-12">
+          <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto text-2xl font-bold">
+            🛡️
+          </div>
+          <h2 className="text-lg font-black text-slate-900">صلاحية مدير النظام مطلوبة</h2>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            إدارة المستخدمين وصلاحيات الحسابات وإعدادات النظام تتطلب حساب مدير النظام (Admin).
+          </p>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className="px-5 py-2.5 bg-[#008e8b] hover:bg-[#007775] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            العودة إلى لوحة التحكم
+          </button>
+        </div>
+      );
+    }
+
+    // 3. Separation of Concerns Guards
+    if ((activeTab === 'students' || activeTab === 'student_attendance') && currentUser?.role === 'TeacherAffairs') {
+      return (
+        <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-amber-200 shadow-xs space-y-4 my-12">
+          <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto text-2xl font-bold">
+            ⚠️
+          </div>
+          <h2 className="text-lg font-black text-slate-900">القسم خاص بشؤون الطلاب</h2>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            حساب شؤون المعلمين مخصص لدوام وسجلات المعلمين والموظفين فقط.
+          </p>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            العودة إلى لوحة التحكم
+          </button>
+        </div>
+      );
+    }
+
+    if ((activeTab === 'employees' || activeTab === 'daily_attendance' || activeTab === 'monthly_matrix') && currentUser?.role === 'StudentAffairs') {
+      return (
+        <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-amber-200 shadow-xs space-y-4 my-12">
+          <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto text-2xl font-bold">
+            ⚠️
+          </div>
+          <h2 className="text-lg font-black text-slate-900">القسم خاص بشؤون المعلمين والعاملين</h2>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            حساب شؤون الطلاب مخصص لسجلات وحضور الطلاب والمدرسة فقط.
+          </p>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className="px-5 py-2.5 bg-[#008e8b] hover:bg-[#007775] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            العودة إلى لوحة التحكم
+          </button>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'dashboard':
         return (
@@ -73,6 +162,24 @@ export default function App() {
             onNavigate={tab => setActiveTab(tab)}
           />
         );
+
+      case 'students':
+        return <StudentsView />;
+
+      case 'student_attendance':
+        return <StudentAttendanceView />;
+
+      case 'behavior':
+        return <BehaviorView />;
+
+      case 'teacher_portal':
+        return <TeacherPortalView />;
+
+      case 'parent_portal':
+        return <ParentPortalView />;
+
+      case 'payroll':
+        return <PayrollView />;
 
       case 'daily_attendance':
         return (
