@@ -277,8 +277,8 @@ export const StudentAttendanceView: React.FC = () => {
               className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
             >
               <option value="ALL">جميع الصفوف</option>
-              {stages
-                .flatMap(s => s.grades)
+              {(stages || [])
+                .flatMap(s => s.grades || [])
                 .map(g => (
                   <option key={g.name} value={g.name}>{g.name}</option>
                 ))}

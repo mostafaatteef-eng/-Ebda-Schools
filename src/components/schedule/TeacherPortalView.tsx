@@ -21,13 +21,20 @@ import {
   getEgyptianDayName,
 } from '../../utils/egyptianTime';
 
-const DAYS_OF_WEEK = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
-const PERIODS = [1, 2, 3, 4, 5, 6, 7];
-
 export const TeacherPortalView: React.FC = () => {
   const [schedule, setSchedule] = useState<ScheduleItem[]>(() => storageService.getSchedule());
   const [lessons, setLessons] = useState<LessonContent[]>(() => storageService.getLessonContents());
   const [activeTab, setActiveTab] = useState<'schedule' | 'lessons'>('schedule');
+
+  const settings = storageService.getSettings();
+  const scheduleConfig = storageService.getScheduleConfig();
+  const daysOfWeek = scheduleConfig.studyDays?.length ? scheduleConfig.studyDays : ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+  const periodCount = scheduleConfig.periodCount || 7;
+  const periodsList = Array.from({ length: periodCount }, (_, i) => i + 1);
+
+  const dynamicGrades = storageService.getGrades();
+  const dynamicSubjects = storageService.getSubjects();
+  const dynamicClassrooms = storageService.getClassrooms();
 
   // Filter Schedule
   const [selectedDay, setSelectedDay] = useState<string>('ALL');
@@ -41,12 +48,12 @@ export const TeacherPortalView: React.FC = () => {
 
   // New Schedule Item form
   const [schedForm, setSchedForm] = useState<Partial<ScheduleItem>>({
-    dayName: 'الأحد',
+    dayName: daysOfWeek[0] || 'الأحد',
     periodNumber: 1,
-    subject: 'لغة عربية',
+    subject: dynamicSubjects[0]?.name || 'لغة عربية',
     teacherName: '',
-    grade: 'الصف الأول الثانوي',
-    classroom: '1/1',
+    grade: dynamicGrades[0]?.name || 'الصف الأول الثانوي',
+    classroom: dynamicClassrooms[0] || '1/1',
     startTime: '08:00',
     endTime: '08:45',
     roomNumber: 'قاعة 101',
@@ -56,16 +63,15 @@ export const TeacherPortalView: React.FC = () => {
   const [lessonForm, setLessonForm] = useState<Partial<LessonContent>>({
     date: getCairoCurrentDate(),
     periodNumber: 1,
-    subject: 'لغة عربية',
+    subject: dynamicSubjects[0]?.name || 'لغة عربية',
     teacherName: '',
-    grade: 'الصف الأول الثانوي',
-    classroom: '1/1',
+    grade: dynamicGrades[0]?.name || 'الصف الأول الثانوي',
+    classroom: dynamicClassrooms[0] || '1/1',
     lessonTitle: '',
     summaryCovered: '',
     homework: '',
   });
 
-  const settings = storageService.getSettings();
   const stages = settings.stages || [];
   const employees = storageService.getEmployees();
   const teachers = employees.filter(e => e.department.includes('تدريس') || e.jobTitle.includes('معلم') || e.department.includes('تعليم'));
@@ -246,7 +252,7 @@ export const TeacherPortalView: React.FC = () => {
                 className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
               >
                 <option value="ALL">جميع الأيام</option>
-                {DAYS_OF_WEEK.map(d => (
+                {daysOfWeek.map(d => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>
@@ -260,7 +266,7 @@ export const TeacherPortalView: React.FC = () => {
                 className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
               >
                 <option value="ALL">جميع الصفوف</option>
-                {stages.flatMap(s => s.grades).map(g => (
+                {(stages || []).flatMap(s => s.grades || []).map(g => (
                   <option key={g.name} value={g.name}>{g.name}</option>
                 ))}
               </select>
@@ -422,7 +428,7 @@ export const TeacherPortalView: React.FC = () => {
                     onChange={(e) => setSchedForm({ ...schedForm, dayName: e.target.value })}
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
                   >
-                    {DAYS_OF_WEEK.map(d => (
+                    {daysOfWeek.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -435,7 +441,7 @@ export const TeacherPortalView: React.FC = () => {
                     onChange={(e) => setSchedForm({ ...schedForm, periodNumber: Number(e.target.value) })}
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
                   >
-                    {PERIODS.map(p => (
+                    {periodsList.map(p => (
                       <option key={p} value={p}>الحصة {p}</option>
                     ))}
                   </select>
@@ -443,14 +449,15 @@ export const TeacherPortalView: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">المادة الدراسية</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="مثال: لغة عربية، رياضيات..."
+                  <select
                     value={schedForm.subject || ''}
                     onChange={(e) => setSchedForm({ ...schedForm, subject: e.target.value })}
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  />
+                  >
+                    {dynamicSubjects.map(s => (
+                      <option key={s.id} value={s.name}>{s.name} ({s.shortName || s.name})</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -472,26 +479,36 @@ export const TeacherPortalView: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الصف الدراسي</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={schedForm.grade || ''}
-                    onChange={(e) => setSchedForm({ ...schedForm, grade: e.target.value })}
-                    placeholder="الصف الأول الثانوي"
+                    onChange={(e) => {
+                      const stageWithGrade = (stages || []).find(st => (st.grades || []).some(g => g.name === e.target.value));
+                      const gr = stageWithGrade?.grades?.find(g => g.name === e.target.value);
+                      setSchedForm({
+                        ...schedForm,
+                        grade: e.target.value,
+                        classroom: gr?.classrooms?.[0] || '1/1',
+                      });
+                    }}
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  />
+                  >
+                    {dynamicGrades.map(g => (
+                      <option key={g.id} value={g.name}>{g.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الفصل</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={schedForm.classroom || ''}
                     onChange={(e) => setSchedForm({ ...schedForm, classroom: e.target.value })}
-                    placeholder="1/1"
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  />
+                  >
+                    {((stages || []).flatMap(st => st.grades || []).find(g => g.name === schedForm.grade)?.classrooms || dynamicClassrooms).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -563,13 +580,15 @@ export const TeacherPortalView: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">المادة</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={lessonForm.subject || ''}
                     onChange={(e) => setLessonForm({ ...lessonForm, subject: e.target.value })}
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2"
-                  />
+                  >
+                    {dynamicSubjects.map(s => (
+                      <option key={s.id} value={s.name}>{s.name} ({s.shortName || s.name})</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="col-span-2">

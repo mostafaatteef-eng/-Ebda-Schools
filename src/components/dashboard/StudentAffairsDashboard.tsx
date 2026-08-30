@@ -282,7 +282,7 @@ export const StudentAffairsDashboard: React.FC<StudentAffairsDashboardProps> = (
               className="bg-white border border-slate-200 rounded-xl px-3 py-1 text-xs font-bold text-slate-800 focus:outline-none"
             >
               <option value="ALL">جميع الصفوف الدراسية</option>
-              {stages.flatMap(stg => stg.grades).map(g => (
+              {(stages || []).flatMap(stg => stg.grades || []).map(g => (
                 <option key={g.id} value={g.name}>{g.name}</option>
               ))}
             </select>

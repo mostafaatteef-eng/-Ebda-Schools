@@ -465,6 +465,246 @@ export interface DepartmentItem {
   isActive: boolean;
 }
 
+export interface JobTitleItem {
+  id: string;
+  title: string;
+  departmentId: string;
+  departmentName?: string;
+  isTeachingStaff: boolean;
+  description?: string;
+  isActive: boolean;
+}
+
+export interface GradeItem {
+  id: string;
+  name: string;
+  shortName: string;
+  order: number;
+  isActive: boolean;
+  academicStage: string;
+  stageId?: string;
+}
+
+export interface ClassroomItem {
+  id: string;
+  gradeId: string;
+  gradeName?: string;
+  classroomNumber: string;
+  displayName: string;
+  capacity: number;
+  academicYear: string;
+  isActive: boolean;
+}
+
+export interface SubjectItem {
+  id: string;
+  name: string;
+  shortName: string;
+  color?: string;
+  assignedGrades: string[]; // grade IDs or Grade Names
+  weeklyPeriods?: number;
+  isActive: boolean;
+}
+
+export interface SchedulePeriodItem {
+  periodNumber: number;
+  name: string;
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  isBreak?: boolean;
+}
+
+export interface ScheduleBreakItem {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface ScheduleConfig {
+  studyDays: string[]; // ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس"]
+  periodCount: number; // 7 or 8
+  dayStartTime: string; // "08:00"
+  dayEndTime: string; // "14:30"
+  defaultPeriodDurationMinutes: number; // 45
+  periods: SchedulePeriodItem[];
+  breakTimes: ScheduleBreakItem[];
+  nonStudyDays: string[]; // ["الجمعة", "السبت"]
+}
+
+export interface StudentAttendanceStatusConfig {
+  id: string;
+  name: string;
+  shortCode: string;
+  color: string;
+  countsAsPresent: boolean;
+  countsAsAbsent: boolean;
+  requiresReason: boolean;
+  requiresTime: boolean;
+  isActive: boolean;
+}
+
+export interface StudentAttendanceRules {
+  startTime: string; // "07:30"
+  gracePeriodMinutes: number; // 15
+  lateThresholdMinutes: number; // 30
+  allowTeacherTakeAttendance: boolean;
+  allowTeacherEditAttendance: boolean;
+  requireStudentAffairsApproval: boolean;
+  allowPastDaysEdit: boolean;
+  maxPastDaysEditLimit: number; // 3 days
+  absenceWarningThresholdDays: number; // 5 days
+  lateWarningThresholdCount: number; // 3 times
+}
+
+export interface TeacherAttendanceRules {
+  workStartTime: string; // "07:30"
+  workEndTime: string; // "14:30"
+  gracePeriodMinutes: number; // 15
+  standardDailyHours: number; // 7
+  workDays: string[];
+  weekendDays: string[];
+  lateDeductionMultiplier: number; // 1.0
+  earlyLeaveDeductionMultiplier: number; // 1.0
+  overtimeRate: number; // 1.5
+  allowRetroactiveAttendance: boolean;
+  maxRetroactiveDays: number; // 2
+}
+
+export interface BehaviorLevelItem {
+  id: string;
+  name: string;
+  minPercentage: number;
+  maxPercentage: number;
+  color: string;
+  badgeColor?: string;
+  description?: string;
+  actionRequired?: string;
+}
+
+export interface AlertRuleItem {
+  id: string;
+  title: string;
+  category: 'student_absence' | 'student_late' | 'behavior_points' | 'teacher_lesson_delay' | 'teacher_late' | 'payroll_closing';
+  thresholdValue: number;
+  unitText: string;
+  targetRoles: UserRole[];
+  isActive: boolean;
+  messageTemplate: string;
+}
+
+export interface LeaveTypeConfig {
+  id: string;
+  name: string;
+  isPaid: boolean;
+  deductFromBalance: boolean;
+  defaultAnnualQuota: number;
+  requiresApproval: boolean;
+  color?: string;
+  isActive: boolean;
+}
+
+export interface PermissionTypeConfig {
+  id: string;
+  name: string;
+  maxHoursPerMonth: number;
+  isPaid: boolean;
+  requiresApproval: boolean;
+  isActive: boolean;
+}
+
+export interface AllowanceTypeItem {
+  id: string;
+  name: string;
+  defaultAmount: number;
+  isTaxable: boolean;
+  isActive: boolean;
+}
+
+export interface DeductionTypeItem {
+  id: string;
+  name: string;
+  defaultAmount: number;
+  isPercentage: boolean;
+  isActive: boolean;
+}
+
+export interface ParentPortalSettings {
+  showAttendance: boolean;
+  showCheckInTime: boolean;
+  showLateMinutes: boolean;
+  showBehavior: boolean;
+  showBehaviorPoints: boolean;
+  showViolationDescription: boolean;
+  showTeacherName: boolean;
+  showLessonContent: boolean;
+  showHomework: boolean;
+  showLearningLinks: boolean;
+  showWeeklySchedule: boolean;
+}
+
+export interface TeacherPortalSettings {
+  allowTakeAttendance: boolean;
+  allowEditAttendance: boolean;
+  editTimeLimitHours: number;
+  allowRecordViolation: boolean;
+  allowViewBehaviorHistory: boolean;
+  allowAddLessonAfterPeriod: boolean;
+  allowEditPastLessons: boolean;
+}
+
+export interface SocialSpecialistSettings {
+  canCreateViolation: boolean;
+  canEditViolation: boolean;
+  canDeleteViolation: boolean;
+  canAdjustPoints: boolean;
+  canManageViolationCatalog: boolean;
+  canViewStudentAttendance: boolean;
+  canAddFollowUpNotes: boolean;
+}
+
+export interface ImportSettings {
+  requireStudentId: boolean;
+  requireNationalId: boolean;
+  requireParentPhone: boolean;
+  duplicateDetectionMethod: 'studentCode' | 'nationalId' | 'nameAndGrade';
+  autoUpdateExisting: boolean;
+}
+
+export interface ExportSettings {
+  showLogo: boolean;
+  schoolTitle: string;
+  subHeader: string;
+  footerText: string;
+  paperSize: 'A4' | 'Letter';
+  orientation: 'portrait' | 'landscape';
+  showPrintDate: boolean;
+  showPrintedBy: boolean;
+  tableFormat: 'compact' | 'standard' | 'relaxed';
+  schedulePdf: {
+    orientation: 'portrait' | 'landscape';
+    showTeacherName: boolean;
+    showTimes: boolean;
+    showRoomNumber: boolean;
+    showAcademicYear: boolean;
+  };
+}
+
+export interface DashboardSettings {
+  roleWidgets: Record<
+    string,
+    {
+      showAttendanceSummary: boolean;
+      showLateList: boolean;
+      showBehaviorSummary: boolean;
+      showSchedule: boolean;
+      showRecentLessons: boolean;
+      showPayrollSummary: boolean;
+      showQuickActions: boolean;
+    }
+  >;
+}
+
 export interface AcademicStage {
   id: string;
   name: string; // ابتدائي، إعدادي، ثانوي
@@ -502,20 +742,72 @@ export interface PermissionMatrix {
   canViewAuditLogs: boolean;
 }
 
+export interface FeeCategoryItem {
+  id: string;
+  name: string;
+  defaultAmount: number;
+  gradeIds?: string[];
+  isMandatory: boolean;
+  frequency?: 'Annual' | 'Semester' | 'Monthly' | 'OneTime';
+  dueDate?: string;
+  description?: string;
+  isActive: boolean;
+  isRecurring?: boolean;
+  allowInstallments?: boolean;
+  isRefundable?: boolean;
+}
+
+export interface PaymentInstallmentPlan {
+  id: string;
+  name: string;
+  installmentsCount: number;
+  distributionPercentages: number[];
+  dueMonths: string[];
+  latePenaltyPercentage: number;
+  discountEarlyPaymentPercentage: number;
+  isActive: boolean;
+}
+
+export interface PaymentMethodConfig {
+  id: string;
+  name: string;
+  type?: string;
+  accountNumber?: string;
+  bankName?: string;
+  serviceFeePercentage?: number;
+  requiresReferenceNumber?: boolean;
+  requiresTransactionNumber?: boolean;
+  isActive: boolean;
+}
+
+export type PayrollRulesConfig = PayrollRule;
+export type PeriodSlot = SchedulePeriodItem;
+export type ScheduleBreakTime = ScheduleBreakItem;
+
 export interface SystemSettings {
   // المدرسة والهوية
   schoolName: string;
+  shortSchoolName?: string;
   companyName?: string; // Compatibility
   schoolAddress?: string;
   schoolPhone?: string;
+  schoolPhones?: string[];
   schoolEmail?: string;
+  schoolWebsite?: string;
   schoolLogo?: string;
+  logoUrl?: string;
+  schoolCode?: string;
+  currentSemester?: string;
   currentAcademicYear: string; // "2025/2026"
   currentTerm: string; // "الترم الأول"
+  academicYearStartDate?: string;
+  academicYearEndDate?: string;
   country: string; // "مصر"
   currency: string; // "ج.م"
+  currencyLabel?: string;
   timeZone: string; // "Africa/Cairo"
   defaultLanguage: string; // "العربية"
+  dateFormat?: string; // "YYYY-MM-DD"
   
   // الحضور المصري
   officialStartTime: string; // "07:30"
@@ -529,12 +821,45 @@ export interface SystemSettings {
   sickLeaveAllowance: number;
   emergencyLeaveAllowance: number;
   
-  // الهيكل المدرسي
+  // الهيكل المدرسي والقوائم الديناميكية
   stages: AcademicStage[];
+  grades: GradeItem[];
+  classrooms: ClassroomItem[];
+  subjects: SubjectItem[];
   departments: DepartmentItem[];
+  jobTitles: JobTitleItem[];
   holidays: SchoolHoliday[];
+  
+  // الحضور والسلوك
+  scheduleConfig: ScheduleConfig;
+  studentAttendanceStatuses: StudentAttendanceStatusConfig[];
+  studentAttendanceRules: StudentAttendanceRules;
+  teacherAttendanceRules: TeacherAttendanceRules;
   behaviorScoreRules: BehaviorScoreRule;
+  behaviorLevels: BehaviorLevelItem[];
+  alertRules: AlertRuleItem[];
+  
+  // الإجازات والأذونات
+  leaveTypes: LeaveTypeConfig[];
+  permissionTypes: PermissionTypeConfig[];
+  
+  // المرتبات والرسوم والأقساط
   payrollRules: PayrollRule;
+  allowanceTypes: AllowanceTypeItem[];
+  deductionTypes: DeductionTypeItem[];
+  feeCategories?: FeeCategoryItem[];
+  installmentPlans?: PaymentInstallmentPlan[];
+  paymentMethods?: PaymentMethodConfig[];
+  
+  // بوابات المستخدمين
+  parentPortalSettings: ParentPortalSettings;
+  teacherPortalSettings: TeacherPortalSettings;
+  socialSpecialistSettings: SocialSpecialistSettings;
+  
+  // الاستيراد والتصدير
+  importSettings: ImportSettings;
+  exportSettings: ExportSettings;
+  dashboardSettings?: DashboardSettings;
   
   // الصلاحيات لكل دور
   rolePermissions?: Record<UserRole, PermissionMatrix>;
@@ -547,6 +872,10 @@ export interface SystemSettings {
   autoCalculateStatus: boolean;
   autoSyncIntervalMinutes: number;
   enableAuditLog: boolean;
+  
+  // الإصدار والمزامنة
+  configVersion: string;
+  lastConfigUpdate: string;
 }
 
 /* =========================================================================

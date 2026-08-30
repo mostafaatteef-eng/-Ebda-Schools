@@ -68,17 +68,17 @@ export const StudentsView: React.FC = () => {
     if (selectedStage === 'ALL') {
       return Array.from(new Set(students.map(s => s.grade).filter(Boolean)));
     }
-    const stageObj = stages.find(s => s.name === selectedStage);
-    return stageObj ? stageObj.grades.map(g => g.name) : [];
+    const stageObj = (stages || []).find(s => s.name === selectedStage);
+    return stageObj?.grades ? stageObj.grades.map(g => g.name) : [];
   }, [selectedStage, students, stages]);
 
   const availableClassrooms = useMemo(() => {
     if (selectedGrade === 'ALL') {
       return Array.from(new Set(students.map(s => s.classroom).filter(Boolean)));
     }
-    const foundStage = stages.find(s => s.grades.some(g => g.name === selectedGrade));
-    const gradeObj = foundStage?.grades.find(g => g.name === selectedGrade);
-    return gradeObj ? gradeObj.classrooms : Array.from(new Set(students.filter(s => s.grade === selectedGrade).map(s => s.classroom)));
+    const foundStage = (stages || []).find(s => (s.grades || []).some(g => g.name === selectedGrade));
+    const gradeObj = foundStage?.grades?.find(g => g.name === selectedGrade);
+    return gradeObj?.classrooms ? gradeObj.classrooms : Array.from(new Set(students.filter(s => s.grade === selectedGrade).map(s => s.classroom)));
   }, [selectedGrade, students, stages]);
 
   // Filtered Students
@@ -533,28 +533,48 @@ export const StudentsView: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     الصف الدراسي <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     required
                     value={formData.grade || ''}
-                    onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
-                    placeholder="مثال: الصف الأول الثانوي"
+                    onChange={(e) => {
+                      const selectedGradeName = e.target.value;
+                      const foundStage = (stages || []).find(s => (s.grades || []).some(g => g.name === selectedGradeName));
+                      const grObj = foundStage?.grades?.find(g => g.name === selectedGradeName);
+                      setFormData({
+                        ...formData,
+                        grade: selectedGradeName,
+                        classroom: grObj?.classrooms?.[0] || '1/1',
+                      });
+                    }}
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
-                  />
+                  >
+                    <option value="">— اختر الصف الدراسي —</option>
+                    {((stages || []).find(s => s.name === formData.stage)?.grades || (stages || []).flatMap(s => s.grades || [])).map(g => (
+                      <option key={g.id} value={g.name}>{g.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     الفصل / الشعبة <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     required
                     value={formData.classroom || ''}
                     onChange={(e) => setFormData({ ...formData, classroom: e.target.value })}
-                    placeholder="مثال: 1/1 أو 2/3"
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
-                  />
+                  >
+                    <option value="">— اختر الفصل —</option>
+                    {(() => {
+                      const currentStage = (stages || []).find(s => s.name === formData.stage);
+                      const currentGrade = currentStage?.grades?.find(g => g.name === formData.grade) || (stages || []).flatMap(s => s.grades || []).find(g => g.name === formData.grade);
+                      const classList = currentGrade?.classrooms || ['1/1', '1/2', '2/1', '2/2', '3/1', '3/2'];
+                      return classList.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ));
+                    })()}
+                  </select>
                 </div>
 
                 <div>

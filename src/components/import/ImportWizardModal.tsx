@@ -134,15 +134,23 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
   };
 
   const downloadSampleTemplate = () => {
+    const settings = storageService.getSettings();
+    const stages = settings.stages || [];
+    const firstStage = stages[0];
+    const firstGrade = firstStage?.grades[0];
+    const secondGrade = firstStage?.grades[1] || firstStage?.grades[0];
+    const departments = settings.departments || [];
+    const jobTitles = settings.jobTitles || [];
+
     if (mode === 'students') {
       const sampleData = [
         {
           'اسم الطالب رباعي': 'أحمد محمد إبراهيم حسن',
           'كود الطالب': 'STD-1001',
           'الرقم القومي': '30805120102345',
-          'المرحلة': 'المرحلة الثانوية',
-          'الصف الدراسي': 'الصف الأول الثانوي',
-          'الفصل': '1/1',
+          'المرحلة': firstStage?.name || 'المرحلة الثانوية',
+          'الصف الدراسي': firstGrade?.name || 'الصف الأول الثانوي',
+          'الفصل': firstGrade?.classrooms[0] || '1/1',
           'النوع': 'ذكر',
           'اسم ولي الأمر': 'محمد إبراهيم حسن',
           'رقم هاتف ولي الأمر': '01012345678',
@@ -154,9 +162,9 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
           'اسم الطالب رباعي': 'سارة طارق عبد الله علي',
           'كود الطالب': 'STD-1002',
           'الرقم القومي': '30908150109876',
-          'المرحلة': 'المرحلة الإعدادية',
-          'الصف الدراسي': 'الصف الثاني الإعدادي',
-          'الفصل': '2/1',
+          'المرحلة': firstStage?.name || 'المرحلة الثانوية',
+          'الصف الدراسي': secondGrade?.name || 'الصف الثاني الثانوي',
+          'الفصل': secondGrade?.classrooms[0] || '2/1',
           'النوع': 'أنثى',
           'اسم ولي الأمر': 'طارق عبد الله علي',
           'رقم هاتف ولي الأمر': '01298765432',
@@ -174,8 +182,8 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
         {
           'اسم الموظف': 'محمود عبد الرحمن سيد',
           'الرقم الوظيفي': 'EMP-201',
-          'المسمى الوظيفي': 'معلم أول لغة عربية',
-          'القسم': 'هيئة التدريس والتعليم',
+          'المسمى الوظيفي': jobTitles[0]?.title || 'معلم أول لغة عربية',
+          'القسم': departments[0]?.name || 'هيئة التدريس والتعليم',
           'الرقم القومي': '28509140101234',
           'الراتب الأساسي': '12500',
           'رقم الهاتف': '01098765432',

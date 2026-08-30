@@ -88,16 +88,16 @@ export default function App() {
       );
     }
 
-    // 2. Strict User / Settings Management Guard
-    if ((activeTab === 'users' || activeTab === 'settings') && currentUser?.role !== 'Admin') {
+    // 2. Strict User / Settings / Payroll Management Guard
+    if ((activeTab === 'users' || activeTab === 'settings' || activeTab === 'payroll' || activeTab === 'audit') && currentUser?.role !== 'Admin') {
       return (
         <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-rose-200 shadow-xs space-y-4 my-12">
           <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto text-2xl font-bold">
             🛡️
           </div>
-          <h2 className="text-lg font-black text-slate-900">صلاحية مدير النظام مطلوبة</h2>
+          <h2 className="text-lg font-black text-slate-900">صلاحية مدير النظام مطلوبة (Admin Access Required)</h2>
           <p className="text-xs text-slate-600 leading-relaxed">
-            إدارة المستخدمين وصلاحيات الحسابات وإعدادات النظام تتطلب حساب مدير النظام (Admin).
+            الوصول إلى مسير الرواتب، سجل الرقابة والعمليات، إدارة المستخدمين، وإعدادات النظام تتطلب حصراً حساب مدير النظام (Admin).
           </p>
           <button
             onClick={() => setActiveTab('dashboard')}

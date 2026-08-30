@@ -1,30 +1,63 @@
 import {
+  AlertRuleItem,
+  AllowanceTypeItem,
   AttendanceRecord,
   AttendanceStatus,
   AuditLogEntry,
+  BehaviorLevelItem,
   BehaviorType,
   BehaviorViolation,
+  ClassroomItem,
+  DeductionTypeItem,
+  DepartmentItem,
   Employee,
+  GradeItem,
+  JobTitleItem,
   LeaveRecord,
   LeaveType,
+  LeaveTypeConfig,
   LessonContent,
   PayrollRecord,
   PermissionMatrix,
+  PermissionTypeConfig,
+  ScheduleConfig,
   ScheduleItem,
   Student,
   StudentAttendanceRecord,
+  StudentAttendanceStatusConfig,
+  SubjectItem,
   SyncStatus,
   SystemSettings,
   User,
 } from '../types';
 import {
+  DEFAULT_ALERT_RULES,
+  DEFAULT_ALLOWANCE_TYPES,
+  DEFAULT_BEHAVIOR_LEVELS,
   DEFAULT_BEHAVIOR_RULES,
   DEFAULT_BEHAVIOR_TYPES,
+  DEFAULT_CLASSROOMS,
+  DEFAULT_DASHBOARD_SETTINGS,
+  DEFAULT_DEDUCTION_TYPES,
   DEFAULT_DEPARTMENTS,
+  DEFAULT_EXPORT_SETTINGS,
+  DEFAULT_GRADES,
   DEFAULT_HOLIDAYS,
+  DEFAULT_IMPORT_SETTINGS,
+  DEFAULT_JOB_TITLES,
+  DEFAULT_LEAVE_TYPES,
+  DEFAULT_PARENT_PORTAL_SETTINGS,
   DEFAULT_PAYROLL_RULES,
   DEFAULT_PERMISSION_MATRIX,
+  DEFAULT_PERMISSION_TYPES,
+  DEFAULT_SCHEDULE_CONFIG,
+  DEFAULT_SOCIAL_SPECIALIST_SETTINGS,
   DEFAULT_STAGES,
+  DEFAULT_STUDENT_ATTENDANCE_RULES,
+  DEFAULT_STUDENT_ATTENDANCE_STATUSES,
+  DEFAULT_SUBJECTS,
+  DEFAULT_TEACHER_ATTENDANCE_RULES,
+  DEFAULT_TEACHER_PORTAL_SETTINGS,
   INITIAL_SETTINGS,
 } from '../data/initialData';
 import { getCairoCurrentTime, getCairoNowISO, getEgyptianDayName } from '../utils/egyptianTime';
@@ -229,27 +262,260 @@ class StorageService {
         ...INITIAL_SETTINGS,
         ...parsed,
         stages: parsed.stages || DEFAULT_STAGES,
+        grades: parsed.grades || DEFAULT_GRADES,
+        classrooms: parsed.classrooms || DEFAULT_CLASSROOMS,
+        subjects: parsed.subjects || DEFAULT_SUBJECTS,
         departments: parsed.departments || DEFAULT_DEPARTMENTS,
+        jobTitles: parsed.jobTitles || DEFAULT_JOB_TITLES,
         holidays: parsed.holidays || DEFAULT_HOLIDAYS,
+        scheduleConfig: parsed.scheduleConfig || DEFAULT_SCHEDULE_CONFIG,
+        studentAttendanceStatuses: parsed.studentAttendanceStatuses || DEFAULT_STUDENT_ATTENDANCE_STATUSES,
+        studentAttendanceRules: parsed.studentAttendanceRules || DEFAULT_STUDENT_ATTENDANCE_RULES,
+        teacherAttendanceRules: parsed.teacherAttendanceRules || DEFAULT_TEACHER_ATTENDANCE_RULES,
         behaviorScoreRules: parsed.behaviorScoreRules || DEFAULT_BEHAVIOR_RULES,
+        behaviorLevels: parsed.behaviorLevels || DEFAULT_BEHAVIOR_LEVELS,
+        alertRules: parsed.alertRules || DEFAULT_ALERT_RULES,
+        leaveTypes: parsed.leaveTypes || DEFAULT_LEAVE_TYPES,
+        permissionTypes: parsed.permissionTypes || DEFAULT_PERMISSION_TYPES,
         payrollRules: parsed.payrollRules || DEFAULT_PAYROLL_RULES,
+        allowanceTypes: parsed.allowanceTypes || DEFAULT_ALLOWANCE_TYPES,
+        deductionTypes: parsed.deductionTypes || DEFAULT_DEDUCTION_TYPES,
+        parentPortalSettings: parsed.parentPortalSettings || DEFAULT_PARENT_PORTAL_SETTINGS,
+        teacherPortalSettings: parsed.teacherPortalSettings || DEFAULT_TEACHER_PORTAL_SETTINGS,
+        socialSpecialistSettings: parsed.socialSpecialistSettings || DEFAULT_SOCIAL_SPECIALIST_SETTINGS,
+        importSettings: parsed.importSettings || DEFAULT_IMPORT_SETTINGS,
+        exportSettings: parsed.exportSettings || DEFAULT_EXPORT_SETTINGS,
+        dashboardSettings: parsed.dashboardSettings || DEFAULT_DASHBOARD_SETTINGS,
         rolePermissions: parsed.rolePermissions || DEFAULT_PERMISSION_MATRIX,
+        configVersion: parsed.configVersion || '1.0.0',
+        lastConfigUpdate: parsed.lastConfigUpdate || new Date().toISOString(),
       };
     } catch {
       return { ...INITIAL_SETTINGS };
     }
   }
 
-  public saveSettings(newSettings: Partial<SystemSettings>): void {
+  public saveSettings(newSettings: Partial<SystemSettings>, auditSummary = 'تحديث إعدادات النظام وقواعد المدرسة'): void {
     const current = this.getSettings();
-    const updated: SystemSettings = { ...current, ...newSettings };
+    const newVersion = this.incrementVersion(current.configVersion || '1.0.0');
+    const updated: SystemSettings = {
+      ...current,
+      ...newSettings,
+      configVersion: newVersion,
+      lastConfigUpdate: getCairoNowISO(),
+    };
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
-    this.logAudit('UPDATE', 'SETTINGS', 'تحديث إعدادات النظام وقواعد المدرسة');
+    this.logAudit(
+      'UPDATE',
+      'SETTINGS',
+      auditSummary,
+      JSON.stringify({ version: current.configVersion }),
+      JSON.stringify({ version: newVersion })
+    );
     this.startAutoSync();
     this.notifyChange();
 
     // Async sync settings to Google Sheets
     this.pushPost('saveSettings', updated).catch(() => {});
+  }
+
+  private incrementVersion(ver: string): string {
+    try {
+      const parts = ver.split('.').map(p => parseInt(p, 10) || 0);
+      if (parts.length >= 3) {
+        parts[2] += 1;
+        return parts.join('.');
+      }
+      return `${ver}.1`;
+    } catch {
+      return '1.0.1';
+    }
+  }
+
+  // ---------------- Dynamic Master Entity Getters ----------------
+  public getGrades(): GradeItem[] {
+    return this.getSettings().grades || DEFAULT_GRADES;
+  }
+
+  public getClassrooms(): ClassroomItem[] {
+    return this.getSettings().classrooms || DEFAULT_CLASSROOMS;
+  }
+
+  public getSubjects(): SubjectItem[] {
+    return this.getSettings().subjects || DEFAULT_SUBJECTS;
+  }
+
+  public getDepartments(): DepartmentItem[] {
+    return this.getSettings().departments || DEFAULT_DEPARTMENTS;
+  }
+
+  public getJobTitles(): JobTitleItem[] {
+    return this.getSettings().jobTitles || DEFAULT_JOB_TITLES;
+  }
+
+  public getStudentAttendanceStatuses(): StudentAttendanceStatusConfig[] {
+    return this.getSettings().studentAttendanceStatuses || DEFAULT_STUDENT_ATTENDANCE_STATUSES;
+  }
+
+  public getLeaveTypesList(): LeaveTypeConfig[] {
+    return this.getSettings().leaveTypes || DEFAULT_LEAVE_TYPES;
+  }
+
+  public getPermissionTypesList(): PermissionTypeConfig[] {
+    return this.getSettings().permissionTypes || DEFAULT_PERMISSION_TYPES;
+  }
+
+  public getAllowanceTypes(): AllowanceTypeItem[] {
+    return this.getSettings().allowanceTypes || DEFAULT_ALLOWANCE_TYPES;
+  }
+
+  public getDeductionTypes(): DeductionTypeItem[] {
+    return this.getSettings().deductionTypes || DEFAULT_DEDUCTION_TYPES;
+  }
+
+  public getBehaviorLevels(): BehaviorLevelItem[] {
+    return this.getSettings().behaviorLevels || DEFAULT_BEHAVIOR_LEVELS;
+  }
+
+  public getAlertRules(): AlertRuleItem[] {
+    return this.getSettings().alertRules || DEFAULT_ALERT_RULES;
+  }
+
+  public getScheduleConfig(): ScheduleConfig {
+    return this.getSettings().scheduleConfig || DEFAULT_SCHEDULE_CONFIG;
+  }
+
+  public exportSettingsJSON(): string {
+    return this.exportSettingsBackupJSON();
+  }
+
+  public importSettingsJSON(jsonString: string): boolean {
+    const res = this.importSettingsBackupJSON(jsonString);
+    return res.success;
+  }
+
+  public resetToFactorySettings(): void {
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+    this.logAudit('UPDATE', 'SETTINGS', 'إعادة ضبط كافة إعدادات النظام وقواعد التشغيل إلى الوضع المصنعي الافتراضي');
+    this.notifyChange();
+  }
+
+  public resetToDefaultSettings(): void {
+    this.resetToFactorySettings();
+  }
+
+  // Check dependencies before deleting or disabling an item
+  public checkDependencies(
+    entityType: 'grade' | 'classroom' | 'subject' | 'department' | 'jobTitle' | 'leaveType' | 'behaviorType',
+    idOrName: string
+  ): {
+    canDelete: boolean;
+    studentCount: number;
+    employeeCount: number;
+    scheduleCount: number;
+    violationCount: number;
+    message: string;
+  } {
+    const students = this.getStudents();
+    const employees = this.getEmployees();
+    const schedules = this.getSchedule();
+    const violations = this.getBehaviorViolations();
+
+    let studentCount = 0;
+    let employeeCount = 0;
+    let scheduleCount = 0;
+    let violationCount = 0;
+
+    switch (entityType) {
+      case 'grade': {
+        studentCount = students.filter(s => s.grade === idOrName || (s as any).gradeId === idOrName).length;
+        scheduleCount = schedules.filter(sc => sc.grade === idOrName || (sc as any).gradeId === idOrName).length;
+        break;
+      }
+      case 'classroom': {
+        studentCount = students.filter(s => s.classroom === idOrName || (s as any).classroomId === idOrName).length;
+        scheduleCount = schedules.filter(sc => sc.classroom === idOrName || (sc as any).classroomId === idOrName).length;
+        break;
+      }
+      case 'subject': {
+        scheduleCount = schedules.filter(sc => sc.subject === idOrName || (sc as any).subjectId === idOrName).length;
+        break;
+      }
+      case 'department': {
+        employeeCount = employees.filter(e => e.department === idOrName || (e as any).departmentId === idOrName).length;
+        break;
+      }
+      case 'jobTitle': {
+        employeeCount = employees.filter(e => e.jobTitle === idOrName).length;
+        break;
+      }
+      case 'behaviorType': {
+        violationCount = violations.filter(v => v.behaviorTypeId === idOrName || v.violationTypeId === idOrName || v.violationName === idOrName).length;
+        break;
+      }
+    }
+
+    const totalUsage = studentCount + employeeCount + scheduleCount + violationCount;
+    const canDelete = totalUsage === 0;
+
+    let message = '';
+    if (!canDelete) {
+      const parts: string[] = [];
+      if (studentCount > 0) parts.push(`${studentCount} طالب`);
+      if (employeeCount > 0) parts.push(`${employeeCount} موظف`);
+      if (scheduleCount > 0) parts.push(`${scheduleCount} حصة بالجدول`);
+      if (violationCount > 0) parts.push(`${violationCount} مخالفة سلوكية مسجلة`);
+      message = `لا يمكن الحذف لارتباط هذا العنصر بـ: ${parts.join(' و ')}. يفضل تعطيله بدلاً من حذفه.`;
+    } else {
+      message = 'لا توجد بيانات مرتبطة بهذا العنصر. يمكن حذفه بأمان.';
+    }
+
+    return {
+      canDelete,
+      studentCount,
+      employeeCount,
+      scheduleCount,
+      violationCount,
+      message,
+    };
+  }
+
+  // Backup and Restore Configuration JSON
+  public exportSettingsBackupJSON(): string {
+    const settings = this.getSettings();
+    return JSON.stringify(
+      {
+        appName: 'NTSS_SCHOOL_CONFIGURATION_BACKUP',
+        exportedAt: getCairoNowISO(),
+        configVersion: settings.configVersion,
+        settings,
+      },
+      null,
+      2
+    );
+  }
+
+  public importSettingsBackupJSON(jsonStr: string): { success: boolean; message: string } {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      const incoming = parsed.settings || parsed;
+      if (!incoming || typeof incoming !== 'object') {
+        return { success: false, message: 'ملف التهيئة غير صالح' };
+      }
+      this.saveSettings(incoming, 'استعادة نسخة احتياطية لإعدادات النظام بالكامل');
+      return { success: true, message: 'تم استعادة كافة إعدادات النظام بنجاح' };
+    } catch (err: any) {
+      return { success: false, message: `فشل استيراد الملف: ${err?.message || 'خطأ غير معروف'}` };
+    }
+  }
+
+  public resetSettingsSection(sectionKey: string): void {
+    const initial = { ...INITIAL_SETTINGS };
+    const current = this.getSettings();
+    if (sectionKey in initial) {
+      (current as any)[sectionKey] = JSON.parse(JSON.stringify((initial as any)[sectionKey]));
+      this.saveSettings(current, `إعادة ضبط قسم [${sectionKey}] للإعدادات الافتراضية`);
+    }
   }
 
   // ---------------- Students Management ----------------
