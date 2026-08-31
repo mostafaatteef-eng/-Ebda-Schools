@@ -25,6 +25,9 @@ import {
 } from 'lucide-react';
 import { AttendanceRecord, Employee, LeaveRecord, PayrollRecord, Student, SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
+import { NotificationEngine } from '../../services/notificationEngine';
+import { PendingActionsCard } from './PendingActionsCard';
+import { SyncQueueService } from '../../services/syncQueueService';
 import { formatEgyptianCurrency, formatEgyptianDate, getCairoCurrentDate, getEgyptianDayName } from '../../utils/egyptianTime';
 
 interface AdminDashboardProps {
@@ -59,24 +62,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const studentUnrecordedCount = Math.max(0, activeStudents.length - todayStudentAtt.length);
   const studentAttRate = activeStudents.length > 0 ? Math.round(((studentPresentCount + studentLateCount) / activeStudents.length) * 100) : 0;
 
-  // Staff Data
+  // HR & Staff Attendance
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Active'), [employees]);
-  const todayEmpAtt = useMemo(() => attendance.filter(a => a.date === selectedDate), [attendance, selectedDate]);
-  const empPresentCount = todayEmpAtt.filter(r => r.status === 'حاضر').length;
-  const empLateCount = todayEmpAtt.filter(r => r.status === 'متأخر').length;
-  const empAbsentCount = todayEmpAtt.filter(r => r.status === 'غائب').length;
-  const empNoCheckoutCount = todayEmpAtt.filter(r => r.checkIn && !r.checkOut).length;
-  const todayLeavesCount = leaves.filter(l => l.startDate <= selectedDate && l.endDate >= selectedDate && l.status === 'مقبولة').length;
+  const todayTeacherAtt = useMemo(() => attendance.filter(a => a.date === selectedDate), [attendance, selectedDate]);
+  const teacherPresentCount = todayTeacherAtt.filter(a => a.status === 'حاضر').length;
+  const teacherLateCount = todayTeacherAtt.filter(a => a.status === 'متأخر').length;
+  const teacherAbsentCount = todayTeacherAtt.filter(a => a.status.includes('غائب')).length;
+  const teacherLeaveCount = todayTeacherAtt.filter(a => a.status.includes('إجازة')).length;
+  const teacherUnrecordedCount = Math.max(0, activeEmployees.length - todayTeacherAtt.length);
+  const teacherAttRate = activeEmployees.length > 0 ? Math.round(((teacherPresentCount + teacherLateCount) / activeEmployees.length) * 100) : 0;
 
-  // Behavior stats
+  // Behavior
   const violations = useMemo(() => storageService.getBehaviorViolations(), []);
   const todayViolations = violations.filter(v => v.date === selectedDate);
-  const severeViolations = violations.filter(v => v.severity === 'الدرجة الثالثة' || v.severity === 'الدرجة الرابعة' || v.severity?.includes('شديدة') || v.severity?.includes('خطيرة'));
-  const pendingReviewViolations = violations.filter(v => v.status === 'قيد المراجعة');
-  const unnotifiedViolations = violations.filter(v => !v.parentNotified && (v.severity?.includes('شديدة') || v.severity?.includes('متوسطة')));
+  const totalViolationsCount = violations.length;
+  const cases = useMemo(() => storageService.getBehaviorCases(), []);
+  const activeCasesCount = cases.filter(c => c.status === 'ACTIVE' || c.status === 'UNDER_FOLLOWUP').length;
 
-  // Timetable & Lessons stats
+  // Schedule & Lessons
   const schedule = useMemo(() => storageService.getSchedule(), []);
+  const substitutions = useMemo(() => storageService.getSubstitutions(), []);
+  const todaySubstitutions = substitutions.filter(s => s.date === selectedDate);
+  const pendingSubstitutions = todaySubstitutions.filter(s => s.status === 'PENDING');
   const lessons = useMemo(() => storageService.getLessonContents(), []);
   const todayDayName = getEgyptianDayName(selectedDate);
   const todayPeriods = schedule.filter(s => s.dayName === todayDayName);
@@ -96,12 +103,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const totalNetPayroll = currentMonthPayroll.reduce((sum, r) => sum + (r.netSalary || 0), 0);
   const uncalculatedPayrollCount = Math.max(0, activeEmployees.length - currentMonthPayroll.length);
 
+  // Dynamic Pending Actions for Admin
+  const adminPendingActions = useMemo(() => {
+    return NotificationEngine.generatePendingActions('Admin', currentUser?.id || '001', {
+      studentsCount: students.length,
+      unrecordedAttendanceCount: studentUnrecordedCount,
+      absentOverLimitCount: 0,
+      pendingSubstitutionsCount: pendingSubstitutions.length,
+      draftHomeworkCount: 0,
+      pendingBehaviorFollowupsCount: activeCasesCount,
+      payrollDraftCount: uncalculatedPayrollCount > 0 ? 1 : 0,
+      syncFailedCount: SyncQueueService.getFailedCount(),
+      missingLessonsCount,
+      activeAcademicYearNeedsReview: false,
+    });
+  }, [students.length, studentUnrecordedCount, pendingSubstitutions.length, activeCasesCount, uncalculatedPayrollCount, missingLessonsCount, currentUser?.id]);
+
   const userName = currentUser?.fullName?.split(' ')[0] || 'مدير النظام';
 
   return (
     <div className="space-y-6">
       {/* Top Welcome & Date Control */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-[#008e8b]/10 text-[#008e8b] flex items-center justify-center font-bold text-xl shrink-0">
             {userName[0]}
@@ -133,274 +156,183 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
+      {/* Dynamic Pending Actions Card */}
+      <PendingActionsCard
+        userRole="Admin"
+        actions={adminPendingActions}
+        onExecuteAction={tab => onNavigate(tab)}
+      />
+
       {/* 1. قسم شؤون الطلاب */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
             <GraduationCap className="w-4 h-4 text-[#008e8b]" />
-            <span>مؤشرات حضور الطلاب اليومية</span>
+            <span>شؤون الطلاب وحضور اليوم</span>
           </div>
           <button
             onClick={() => onNavigate('student_attendance')}
-            className="text-xs text-[#008e8b] hover:text-[#007775] font-bold flex items-center gap-1 hover:underline cursor-pointer"
+            className="text-xs font-bold text-[#008e8b] hover:underline flex items-center gap-1 cursor-pointer"
           >
-            <span>رصد الحضور الكامل</span>
+            <span>فتح شيت الحضور الكامل</span>
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div
-            onClick={() => onNavigate('students')}
-            className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:border-[#008e8b]/50 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-slate-500 font-bold">إجمالي الطلاب</div>
-            <div className="text-xl font-black text-slate-900 mt-1">{activeStudents.length}</div>
-            <div className="text-[10px] text-slate-400 mt-1">طالب نشط</div>
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500">الطلاب المقيدون</span>
+              <span className="p-1.5 rounded-lg bg-teal-50 text-[#008e8b]"><GraduationCap className="w-4 h-4" /></span>
+            </div>
+            <div className="text-2xl font-black text-slate-900 mt-2">{activeStudents.length}</div>
+            <div className="text-[11px] text-slate-400 mt-1 font-semibold">طالب نشط بالعام الحالي</div>
           </div>
 
-          <div
-            onClick={() => onNavigate('student_attendance')}
-            className="bg-white rounded-2xl p-4 border border-emerald-100 shadow-xs hover:border-emerald-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-emerald-700 font-bold">حاضر اليوم</div>
-            <div className="text-xl font-black text-emerald-600 mt-1">{studentPresentCount}</div>
-            <div className="text-[10px] text-emerald-600 mt-1">طالب مسجل حضور</div>
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500">حضور اليوم</span>
+              <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600"><UserCheck className="w-4 h-4" /></span>
+            </div>
+            <div className="text-2xl font-black text-emerald-600 mt-2">{studentPresentCount}</div>
+            <div className="text-[11px] text-emerald-700 mt-1 font-bold">نسبة الحضور: {studentAttRate}%</div>
           </div>
 
-          <div
-            onClick={() => onNavigate('student_attendance')}
-            className="bg-white rounded-2xl p-4 border border-amber-100 shadow-xs hover:border-amber-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-amber-700 font-bold">متأخر اليوم</div>
-            <div className="text-xl font-black text-amber-600 mt-1">{studentLateCount}</div>
-            <div className="text-[10px] text-amber-600 mt-1">تأخر صباحي</div>
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500">غياب وتأخير اليوم</span>
+              <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600"><UserX className="w-4 h-4" /></span>
+            </div>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="text-2xl font-black text-rose-600">{studentAbsentCount}</span>
+              <span className="text-xs font-bold text-amber-600">({studentLateCount} متأخر)</span>
+            </div>
+            <div className="text-[11px] text-rose-700 mt-1 font-semibold">يحتاج تواصل ومتابعة</div>
           </div>
 
-          <div
-            onClick={() => onNavigate('student_attendance')}
-            className="bg-white rounded-2xl p-4 border border-rose-100 shadow-xs hover:border-rose-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-rose-700 font-bold">غائب اليوم</div>
-            <div className="text-xl font-black text-rose-600 mt-1">{studentAbsentCount}</div>
-            <div className="text-[10px] text-rose-600 mt-1">غياب بعذر/بدون</div>
-          </div>
-
-          <div
-            onClick={() => onNavigate('student_attendance')}
-            className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-slate-500 font-bold">لم يسجل بعد</div>
-            <div className="text-xl font-black text-slate-700 mt-1">{studentUnrecordedCount}</div>
-            <div className="text-[10px] text-slate-400 mt-1">قيد الانتظار</div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-xs">
-            <div className="text-[11px] text-[#008e8b] font-bold">نسبة الحضور</div>
-            <div className="text-xl font-black text-[#008e8b] mt-1">{studentAttRate}%</div>
-            <div className="text-[10px] text-slate-500 mt-1">معدل الانضباط</div>
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500">غير مرصود بعد</span>
+              <span className="p-1.5 rounded-lg bg-amber-50 text-amber-600"><ClockAlert className="w-4 h-4" /></span>
+            </div>
+            <div className="text-2xl font-black text-amber-600 mt-2">{studentUnrecordedCount}</div>
+            <div className="text-[11px] text-amber-700 mt-1 font-semibold">بانتظار رصد المشرفين</div>
           </div>
         </div>
       </div>
 
-      {/* 2. قسم المعلمين والموظفين */}
+      {/* 2. قسم شؤون المعلمين والموظفين */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
-            <Users className="w-4 h-4 text-indigo-600" />
-            <span>دوام المعلمين والموظفين</span>
+            <Users className="w-4 h-4 text-[#008e8b]" />
+            <span>دوام المعلمين والموظفين اليوم</span>
           </div>
           <button
             onClick={() => onNavigate('daily_attendance')}
-            className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+            className="text-xs font-bold text-[#008e8b] hover:underline flex items-center gap-1 cursor-pointer"
           >
-            <span>سجل الحضور الكامل</span>
+            <span>سجل الدوام المكتبي</span>
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div
-            onClick={() => onNavigate('employees')}
-            className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:border-indigo-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-slate-500 font-bold">إجمالي الكادر</div>
-            <div className="text-xl font-black text-slate-900 mt-1">{activeEmployees.length}</div>
-            <div className="text-[10px] text-slate-400 mt-1">معلم وموظف</div>
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500">إجمالي المعلمين</span>
+              <span className="p-1.5 rounded-lg bg-teal-50 text-[#008e8b]"><Users className="w-4 h-4" /></span>
+            </div>
+            <div className="text-2xl font-black text-slate-900 mt-2">{activeEmployees.length}</div>
+            <div className="text-[11px] text-slate-400 mt-1 font-semibold">معلم وموظف نشط</div>
           </div>
 
-          <div
-            onClick={() => onNavigate('daily_attendance')}
-            className="bg-white rounded-2xl p-4 border border-emerald-100 shadow-xs hover:border-emerald-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-emerald-700 font-bold">حاضرون</div>
-            <div className="text-xl font-black text-emerald-600 mt-1">{empPresentCount}</div>
-            <div className="text-[10px] text-emerald-600 mt-1">في الموعد</div>
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500">حضور الكادر اليوم</span>
+              <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600"><CheckCircle2 className="w-4 h-4" /></span>
+            </div>
+            <div className="text-2xl font-black text-emerald-600 mt-2">{teacherPresentCount}</div>
+            <div className="text-[11px] text-emerald-700 mt-1 font-bold">نسبة التواجد: {teacherAttRate}%</div>
           </div>
 
-          <div
-            onClick={() => onNavigate('daily_attendance')}
-            className="bg-white rounded-2xl p-4 border border-amber-100 shadow-xs hover:border-amber-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-amber-700 font-bold">متأخرون</div>
-            <div className="text-xl font-black text-amber-600 mt-1">{empLateCount}</div>
-            <div className="text-[10px] text-amber-600 mt-1">تأخر صباحي</div>
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500">غياب وإجازات</span>
+              <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600"><Clock className="w-4 h-4" /></span>
+            </div>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="text-2xl font-black text-rose-600">{teacherAbsentCount + teacherLeaveCount}</span>
+              <span className="text-xs font-bold text-amber-600">({teacherLateCount} متأخر)</span>
+            </div>
+            <div className="text-[11px] text-rose-700 mt-1 font-semibold">({teacherLeaveCount}) إجازة رسمية</div>
           </div>
 
-          <div
-            onClick={() => onNavigate('daily_attendance')}
-            className="bg-white rounded-2xl p-4 border border-rose-100 shadow-xs hover:border-rose-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-rose-700 font-bold">غائبون</div>
-            <div className="text-xl font-black text-rose-600 mt-1">{empAbsentCount}</div>
-            <div className="text-[10px] text-rose-600 mt-1">بدون حضور</div>
-          </div>
-
-          <div
-            onClick={() => onNavigate('daily_attendance')}
-            className="bg-white rounded-2xl p-4 border border-purple-100 shadow-xs hover:border-purple-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-purple-700 font-bold">لم ينصرف</div>
-            <div className="text-xl font-black text-purple-600 mt-1">{empNoCheckoutCount}</div>
-            <div className="text-[10px] text-purple-600 mt-1">حضر ولم يوقع انصراف</div>
-          </div>
-
-          <div
-            onClick={() => onNavigate('leaves')}
-            className="bg-white rounded-2xl p-4 border border-blue-100 shadow-xs hover:border-blue-300 transition-all cursor-pointer"
-          >
-            <div className="text-[11px] text-blue-700 font-bold">إجازات اليوم</div>
-            <div className="text-xl font-black text-blue-600 mt-1">{todayLeavesCount}</div>
-            <div className="text-[10px] text-blue-600 mt-1">إجازات معتمدة</div>
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500">حصص احتياطي اليوم</span>
+              <span className="p-1.5 rounded-lg bg-purple-50 text-purple-600"><Layers className="w-4 h-4" /></span>
+            </div>
+            <div className="text-2xl font-black text-purple-600 mt-2">{todaySubstitutions.length}</div>
+            <div className="text-[11px] text-purple-700 mt-1 font-semibold">({pendingSubstitutions.length}) بانتظار التعيين</div>
           </div>
         </div>
       </div>
 
-      {/* 3. قسم السلوك والجدول الدراسي */}
+      {/* 3. قسم السلوك والرواتب (Admin Only) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* السلوك والانضباط */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
-              <Shield className="w-4 h-4 text-amber-600" />
-              <span>متابعة الانضباط والسلوك</span>
+        {/* Behavior Overview */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+              <Shield className="w-4 h-4 text-amber-500" />
+              <span>الانضباط والحالات السلوكية</span>
             </div>
             <button
               onClick={() => onNavigate('behavior')}
-              className="text-xs text-amber-600 hover:text-amber-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+              className="text-xs font-bold text-[#008e8b] hover:underline"
             >
-              <span>سجل المخالفات</span>
-              <ArrowLeft className="w-3.5 h-3.5" />
+              عرض السجل السلوكي
             </button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3 bg-slate-50 rounded-xl text-center">
-              <div className="text-[11px] text-slate-500 font-bold">مخالفات اليوم</div>
-              <div className="text-lg font-extrabold text-slate-900 mt-0.5">{todayViolations.length}</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/60">
+              <span className="text-[11px] text-slate-500 font-bold">مخالفات مسجلة اليوم</span>
+              <div className="text-xl font-black text-slate-900 mt-1">{todayViolations.length}</div>
             </div>
-            <div className="p-3 bg-amber-50 rounded-xl text-center">
-              <div className="text-[11px] text-amber-700 font-bold">قيد المراجعة</div>
-              <div className="text-lg font-extrabold text-amber-800 mt-0.5">{pendingReviewViolations.length}</div>
-            </div>
-            <div className="p-3 bg-rose-50 rounded-xl text-center">
-              <div className="text-[11px] text-rose-700 font-bold">مخالفات جسيمة</div>
-              <div className="text-lg font-extrabold text-rose-700 mt-0.5">{severeViolations.length}</div>
-            </div>
-            <div className="p-3 bg-purple-50 rounded-xl text-center">
-              <div className="text-[11px] text-purple-700 font-bold">لم يخطر ولي أمره</div>
-              <div className="text-lg font-extrabold text-purple-700 mt-0.5">{unnotifiedViolations.length}</div>
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/60">
+              <span className="text-[11px] text-slate-500 font-bold">حالات إرشاد نشطة</span>
+              <div className="text-xl font-black text-amber-600 mt-1">{activeCasesCount}</div>
             </div>
           </div>
         </div>
 
-        {/* الجدول الدراسي وتوثيق الدروس */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
-              <BookOpen className="w-4 h-4 text-teal-600" />
-              <span>الجدول الدراسي وتوثيق المادة العلمية</span>
+        {/* Payroll Engine Status Card (Admin Only) */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+              <Banknote className="w-4 h-4 text-emerald-600" />
+              <span>مسير الرواتب والمحرك المالي (شهر {currentMonth} / {currentYear})</span>
             </div>
-            <button
-              onClick={() => onNavigate('teacher_portal')}
-              className="text-xs text-teal-600 hover:text-teal-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
-            >
-              <span>الجدول والدروس</span>
-              <ArrowLeft className="w-3.5 h-3.5" />
-            </button>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+              خاص بالإدارة
+            </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3 bg-slate-50 rounded-xl text-center">
-              <div className="text-[11px] text-slate-500 font-bold">حصص اليوم</div>
-              <div className="text-lg font-extrabold text-slate-900 mt-0.5">{todayPeriods.length}</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/60">
+              <span className="text-[11px] text-slate-500 font-bold">صافي المستحقات المقدرة</span>
+              <div className="text-lg font-black text-emerald-700 mt-1">
+                {formatEgyptianCurrency(totalNetPayroll)}
+              </div>
             </div>
-            <div className="p-3 bg-emerald-50 rounded-xl text-center">
-              <div className="text-[11px] text-emerald-700 font-bold">تم توثيقها</div>
-              <div className="text-lg font-extrabold text-emerald-700 mt-0.5">{todayLessonsLogged.length}</div>
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/60">
+              <span className="text-[11px] text-slate-500 font-bold">حالة المسير</span>
+              <div className="text-sm font-black text-slate-800 mt-1">
+                {payrollStatus === 'Approved' ? 'معتمد رسمياً' : payrollStatus === 'Paid' ? 'مدفوع' : 'مسودة قيد المراجعة'}
+              </div>
             </div>
-            <div className="p-3 bg-amber-50 rounded-xl text-center">
-              <div className="text-[11px] text-amber-700 font-bold">بدون توثيق</div>
-              <div className="text-lg font-extrabold text-amber-800 mt-0.5">{missingLessonsCount}</div>
-            </div>
-            <div className="p-3 bg-teal-50 rounded-xl text-center">
-              <div className="text-[11px] text-[#008e8b] font-bold">نسبة التوثيق</div>
-              <div className="text-lg font-extrabold text-[#008e8b] mt-0.5">{lessonCoverageRate}%</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. قسم الرواتب والأجور (ADMIN ONLY) */}
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl p-6 shadow-md relative overflow-hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
-          <div>
-            <div className="flex items-center gap-2">
-              <Banknote className="w-5 h-5 text-emerald-400" />
-              <h2 className="text-base font-bold text-white">
-                مسير رواتب شهر ({currentMonth}/{currentYear}) — صلاحية حصرية للمدير
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                حالة المسير: {payrollStatus === 'Approved' ? 'معتمد' : payrollStatus === 'Locked' ? 'مغلق' : 'مسودة'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 mt-1">
-              يتم احتساب البدلات، المكافآت، وخصومات الغياب والتأخيرات تلقائياً من بيانات الحضور والانصراف
-            </p>
-          </div>
-
-          <button
-            onClick={() => onNavigate('payroll')}
-            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer"
-          >
-            <span>فتح محرك مسير الرواتب</span>
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-5 border-t border-slate-700/60 relative z-10">
-          <div className="bg-slate-800/80 rounded-2xl p-4 border border-slate-700">
-            <div className="text-[11px] text-slate-400 font-bold">إجمالي المستحقات (Gross)</div>
-            <div className="text-lg font-black text-emerald-400 mt-1">{formatEgyptianCurrency(totalGrossPayroll)}</div>
-            <div className="text-[10px] text-slate-400 mt-1">الأساسي + البدلات والحوافز</div>
-          </div>
-
-          <div className="bg-slate-800/80 rounded-2xl p-4 border border-slate-700">
-            <div className="text-[11px] text-slate-400 font-bold">إجمالي الاستقطاعات</div>
-            <div className="text-lg font-black text-rose-400 mt-1">{formatEgyptianCurrency(totalDeductionsPayroll)}</div>
-            <div className="text-[10px] text-slate-400 mt-1">غياب + تأخير + تأمينات</div>
-          </div>
-
-          <div className="bg-slate-800/80 rounded-2xl p-4 border border-slate-700">
-            <div className="text-[11px] text-slate-400 font-bold">صافي الرواتب المستحقة (Net)</div>
-            <div className="text-lg font-black text-cyan-300 mt-1">{formatEgyptianCurrency(totalNetPayroll)}</div>
-            <div className="text-[10px] text-slate-400 mt-1">المبلغ القابل للصرف</div>
-          </div>
-
-          <div className="bg-slate-800/80 rounded-2xl p-4 border border-slate-700">
-            <div className="text-[11px] text-slate-400 font-bold">موظفون بانتظار الاحتساب</div>
-            <div className="text-lg font-black text-amber-400 mt-1">{uncalculatedPayrollCount}</div>
-            <div className="text-[10px] text-slate-400 mt-1">من أصل {activeEmployees.length} موظف</div>
           </div>
         </div>
       </div>

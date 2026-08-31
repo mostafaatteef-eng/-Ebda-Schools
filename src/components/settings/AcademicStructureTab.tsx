@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { AcademicStage, ClassroomItem, GradeItem, SubjectItem, SystemSettings } from '../../types';
 import { storageService } from '../../services/storageService';
+import { AcademicYearsManagement } from './AcademicYearsManagement';
 
 interface AcademicStructureTabProps {
   formData: SystemSettings;
@@ -22,7 +23,7 @@ interface AcademicStructureTabProps {
 }
 
 export const AcademicStructureTab: React.FC<AcademicStructureTabProps> = ({ formData, setFormData }) => {
-  const [subSection, setSubSection] = useState<'stages_grades' | 'classrooms' | 'subjects'>('stages_grades');
+  const [subSection, setSubSection] = useState<'academic_years' | 'stages_grades' | 'classrooms' | 'subjects'>('academic_years');
 
   // Stage / Grade Modal
   const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
@@ -280,6 +281,20 @@ export const AcademicStructureTab: React.FC<AcademicStructureTabProps> = ({ form
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            id="tab_academic_years_btn"
+            onClick={() => setSubSection('academic_years')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
+              subSection === 'academic_years'
+                ? 'bg-teal-600 text-white shadow'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            الأعوام والترقيات
+          </button>
+
+          <button
+            type="button"
             id="tab_stages_grades_btn"
             onClick={() => setSubSection('stages_grades')}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
@@ -289,7 +304,7 @@ export const AcademicStructureTab: React.FC<AcademicStructureTabProps> = ({ form
             }`}
           >
             <GraduationCap className="w-4 h-4" />
-            المراحل والصفوف الدراسية ({grades.length})
+            المراحل والصفوف ({grades.length})
           </button>
 
           <button
@@ -303,7 +318,7 @@ export const AcademicStructureTab: React.FC<AcademicStructureTabProps> = ({ form
             }`}
           >
             <School className="w-4 h-4" />
-            الفصول والشُعب الدراسية ({classrooms.length})
+            الفصول والشُعب ({classrooms.length})
           </button>
 
           <button
@@ -344,6 +359,11 @@ export const AcademicStructureTab: React.FC<AcademicStructureTabProps> = ({ form
           <CheckCircle2 className="w-4 h-4" />
           {notification}
         </div>
+      )}
+
+      {/* ---------------- Sub-Section: Academic Years & Promotions ---------------- */}
+      {subSection === 'academic_years' && (
+        <AcademicYearsManagement />
       )}
 
       {/* ---------------- Sub-Section: Grades & Stages ---------------- */}

@@ -22,6 +22,28 @@ export type PermissionKey =
   | 'studentAttendance.create'
   | 'studentAttendance.edit'
   | 'studentAttendance.delete'
+  | 'schoolAttendance.view'
+  | 'schoolAttendance.create'
+  | 'schoolAttendance.edit'
+  | 'schoolAttendance.approve'
+  | 'schoolAttendance.lock'
+  | 'schoolAttendance.overrideLocked'
+  | 'classAttendance.view'
+  | 'classAttendance.create'
+  | 'classAttendance.edit'
+  | 'academicYears.view'
+  | 'academicYears.create'
+  | 'academicYears.edit'
+  | 'academicYears.close'
+  | 'academicYears.reopen'
+  | 'studentPromotion.view'
+  | 'studentPromotion.execute'
+  | 'studentPromotion.rollback'
+  | 'student360.view'
+  | 'student360.viewAttendance'
+  | 'student360.viewBehavior'
+  | 'student360.viewParentCommunication'
+  | 'student360.editNotes'
   | 'teachers.view'
   | 'teachers.create'
   | 'teachers.edit'
@@ -39,11 +61,20 @@ export type PermissionKey =
   | 'behavior.create'
   | 'behavior.edit'
   | 'behavior.delete'
+  | 'behaviorCases.view'
+  | 'behaviorCases.create'
+  | 'behaviorCases.edit'
+  | 'behaviorCases.close'
   | 'behaviorTypes.manage'
   | 'behaviorPoints.manage'
+  | 'positiveBehavior.create'
+  | 'parentCommunication.view'
+  | 'parentCommunication.create'
   | 'schedule.view'
   | 'schedule.manage'
   | 'schedule.exportPdf'
+  | 'schedule.manageSubstitution'
+  | 'schedule.viewConflicts'
   | 'lessonContent.view'
   | 'lessonContent.create'
   | 'lessonContent.edit'
@@ -187,10 +218,123 @@ export interface LeaveRecord {
 }
 
 /* =========================================================================
+ * 0. العام الدراسي والترم الدراسي (Academic Years & Terms Entities)
+ * ========================================================================= */
+export type AcademicYearStatus = 'Draft' | 'Active' | 'Closed' | 'Archived' | 'ACTIVE' | 'CLOSED';
+export type TermStatus = 'Draft' | 'Active' | 'Closed' | 'ACTIVE' | 'CLOSED' | 'UPCOMING' | 'Draft';
+
+export interface Term {
+  id: string; // e.g. "TERM-2026-T1"
+  academicYearId?: string; // e.g. "AY-2026-2027"
+  name: string; // "الترم الأول" / "الترم الثاني"
+  code?: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  status: TermStatus;
+  isCurrent?: boolean;
+  order?: number;
+}
+
+export interface AcademicYear {
+  id: string; // e.g. "AY-2026-2027"
+  name: string; // "2026/2027"
+  code?: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  status: AcademicYearStatus;
+  isCurrent?: boolean;
+  isDefault?: boolean;
+  isLocked?: boolean;
+  terms: Term[];
+  createdAt?: string;
+  createdBy?: string;
+  closedAt?: string;
+  closedBy?: string;
+  closedNotes?: string;
+  notes?: string;
+}
+
+/* =========================================================================
  * 1. بيانات الطلاب والفصول (Student & Classroom Management)
  * ========================================================================= */
-export type StudentStatus = 'نشط' | 'موقوف' | 'منقول' | 'متخرج' | 'غير مقيد';
+export type StudentStatus = 'نشط' | 'موقوف' | 'منقول' | 'متخرج' | 'غير مقيد' | 'غير نشط';
 export type Gender = 'ذكر' | 'أنثى';
+
+export type EnrollmentStatus = 
+  | 'نشط' 
+  | 'مرقى' 
+  | 'معيد' 
+  | 'منقول' 
+  | 'متخرج' 
+  | 'موقوف' 
+  | 'غير مستمر';
+
+export interface StudentEnrollment {
+  id: string; // "ENR-STU001-2026-2027"
+  studentId: string; // "STU-000001" (Internal Fixed ID)
+  studentCode?: string;
+  studentName?: string;
+  academicYearId: string; // "AY-2026-2027"
+  academicYearName: string; // "2026/2027"
+  termId?: string;
+  gradeId?: string;
+  grade: string; // "الصف الأول الثانوي"
+  classroomId?: string;
+  classroom: string; // "1/1"
+  section?: string;
+  stage?: string;
+  enrollmentStatus?: EnrollmentStatus;
+  status?: string;
+  promotionStatus?: 'PROMOTED' | 'RETAINED' | 'GRADUATED' | 'TRANSFERRED_OUT' | string;
+  promotionNotes?: string;
+  enrollmentDate: string;
+  exitDate?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type TransferType = 
+  | 'نقل فصل' 
+  | 'ترقية' 
+  | 'إعادة صف' 
+  | 'تحويل مدرسة' 
+  | 'عودة' 
+  | 'تغيير إداري';
+
+export interface StudentTransferHistory {
+  id: string; // "TRF-2026-0001"
+  studentId: string;
+  studentCode?: string;
+  studentName?: string;
+  academicYearId: string;
+  fromGrade: string;
+  fromClassroom: string;
+  toGrade: string;
+  toClassroom: string;
+  transferType: TransferType;
+  reason: string;
+  transferDate: string;
+  performedBy?: string;
+  approvedBy?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PromotionRule {
+  id: string;
+  sourceGrade?: string;
+  fromGrade?: string;
+  targetGrade?: string;
+  toGrade?: string;
+  ruleType?: 'AUTOMATIC_ALL' | 'MANUAL_SELECTION' | 'CONDITION_BASED' | string;
+  isGraduation?: boolean;
+  defaultAction?: 'ترقية للصف التالي' | 'إعادة نفس الصف' | 'تخرج' | 'نقل' | 'موقوف' | string;
+  minAttendancePercentage?: number;
+  minBehaviorScore?: number;
+  isActive: boolean;
+}
 
 export interface Classroom {
   id: string; // CLS001
@@ -206,8 +350,10 @@ export interface Classroom {
 }
 
 export interface Student {
-  id: string; // STD001, STU-2026-001
-  studentCode: string; // كود الطالب
+  id: string; // Fixed immutable internal reference (e.g. STU-000001)
+  studentId?: string; // Explicit alias for fixed ID
+  studentCode: string; // Current school code (e.g. 2026-00154)
+  schoolStudentCode?: string;
   name: string; // اسم الطالب رباعي
   nationalId?: string; // الرقم القومي
   gender: Gender;
@@ -220,7 +366,9 @@ export interface Student {
   classroom: string; // رقم الفصل أو اسم الفصل (1 أو فصل 1 أو 1/1)
   classroomId?: string;
   classroomNumber?: string;
+  section?: string;
   academicYear: string; // العام الدراسي (2025/2026)
+  academicYearId?: string;
   status: StudentStatus;
   enrollmentDate?: string; // تاريخ الالتحاق
   phone?: string;
@@ -240,8 +388,30 @@ export interface Student {
 }
 
 /* =========================================================================
- * 2. حضور وغياب الطلاب (Student Attendance)
+ * 2. حضور وغياب الطلاب (School Attendance & Class Attendance Separation)
  * ========================================================================= */
+export type AttendanceDayStatus = 'Open' | 'UnderReview' | 'Approved' | 'Locked';
+
+export interface AttendanceDay {
+  id: string; // "DAY-2026-10-13"
+  date: string; // YYYY-MM-DD
+  academicYearId: string;
+  termId?: string;
+  dayName: string;
+  status: AttendanceDayStatus;
+  totalStudentsCount: number;
+  recordedCount: number;
+  presentCount: number;
+  lateCount: number;
+  absentCount: number;
+  unrecordedCount: number;
+  approvedBy?: string;
+  approvedAt?: string;
+  lockedBy?: string;
+  lockedAt?: string;
+  lockNotes?: string;
+}
+
 export type StudentAttendanceStatus =
   | 'حاضر'
   | 'متأخر'
@@ -254,6 +424,7 @@ export type StudentAttendanceStatus =
   | 'موقوف'
   | 'هروب'
   | 'لم يسجل'
+  | 'عطلة'
   | string;
 
 export interface StudentAttendanceRecord {
@@ -261,6 +432,8 @@ export interface StudentAttendanceRecord {
   studentId: string;
   studentCode?: string;
   studentName: string;
+  academicYearId?: string;
+  termId?: string;
   stage: string;
   grade: string;
   classroom: string;
@@ -268,6 +441,7 @@ export interface StudentAttendanceRecord {
   dayName: string;
   status: StudentAttendanceStatus;
   checkInTime?: string; // HH:mm
+  checkOutTime?: string; // HH:mm
   lateMinutes?: number;
   absenceReason?: string;
   absenceCategory?: string;
@@ -275,6 +449,160 @@ export interface StudentAttendanceRecord {
   recordedBy?: string;
   recordedAt?: string;
   updatedAt?: string;
+}
+
+export type SchoolAttendanceRecord = StudentAttendanceRecord;
+
+export interface ClassAttendanceRecord {
+  id: string; // "ATT-CLS-STU001-2026-10-13-P3"
+  studentId: string;
+  studentCode?: string;
+  studentName?: string;
+  scheduleItemId: string;
+  lessonInstanceId?: string;
+  academicYearId?: string;
+  termId?: string;
+  date: string; // YYYY-MM-DD
+  periodId?: number;
+  periodNumber?: number;
+  subjectId?: string;
+  subject: string;
+  teacherId?: string;
+  teacherName: string;
+  grade: string;
+  classroom: string;
+  status: 'حاضر' | 'غائب' | 'متأخر' | 'مأذون' | 'خرج أثناء الحصة' | string;
+  lateMinutes?: number;
+  notes?: string;
+  recordedBy?: string;
+  recordedAt?: string;
+  takenBy?: string;
+  takenAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/* =========================================================================
+ * 2.5 التواصل مع ولي الأمر (Parent Communication Log)
+ * ========================================================================= */
+export type CommunicationType = 
+  | 'مكالمة هاتفية' 
+  | 'مقابلة شخصية' 
+  | 'رسالة SMS' 
+  | 'WhatsApp' 
+  | 'بريد إلكتروني' 
+  | 'اجتماع رسمي' 
+  | 'أخرى';
+
+export interface ParentCommunicationLog {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  parentId?: string;
+  parentName: string;
+  communicationType: CommunicationType;
+  type?: string;
+  date: string;
+  time?: string;
+  subject?: string;
+  reason: string;
+  details: string;
+  result: string;
+  nextAction?: string;
+  followUpDate?: string;
+  recordedBy?: string;
+  performedBy?: string;
+  performedByName?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/* =========================================================================
+ * 3. السلوك، الحالات والمخالفات المدرسية (Behavior Cases & Positive Points)
+ * ========================================================================= */
+export type BehaviorCaseStatus = 
+  | 'New' 
+  | 'Under Review' 
+  | 'Parent Contact Required' 
+  | 'Parent Contacted' 
+  | 'Action Required' 
+  | 'Monitoring' 
+  | 'Resolved' 
+  | 'Closed'
+  | 'CLOSED'
+  | string;
+
+export interface BehaviorCase {
+  id: string; // "CASE-B102"
+  caseCode: string; // "B-102"
+  caseNumber?: string;
+  studentId: string;
+  studentName: string;
+  academicYearId?: string;
+  termId?: string;
+  grade: string;
+  classroom: string;
+  openedDate: string;
+  openedBy?: string;
+  status: BehaviorCaseStatus;
+  severity: string;
+  assignedTo: string;
+  assignedToName: string;
+  summary: string;
+  resolution?: string;
+  resolutionSummary?: string;
+  violationIds: string[];
+  closedDate?: string;
+  closedAt?: string;
+  closedBy?: string;
+  followups?: BehaviorFollowup[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface BehaviorFollowup {
+  id: string;
+  caseId: string;
+  date: string;
+  time?: string;
+  actionType: string;
+  summary?: string;
+  notes: string;
+  performedBy: string;
+  performedByName?: string;
+  nextAction?: string;
+  followUpDate?: string;
+  status?: string;
+  createdAt: string;
+}
+
+export interface PositiveBehaviorType {
+  id: string;
+  name: string;
+  category: string;
+  points: number; // +5, +10
+  description?: string;
+  icon?: string;
+  isActive: boolean;
+  sortOrder?: number;
+}
+
+export interface BehaviorScoreLedger {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  type: 'credit' | 'debit' | 'POSITIVE' | 'RESTORE' | 'VIOLATION' | 'ADJUSTMENT' | string;
+  sourceType: 'positive_behavior' | 'violation' | 'adjustment' | 'annual_reset' | string;
+  sourceId?: string;
+  points: number;
+  balanceAfter: number;
+  academicYearId?: string;
+  date: string;
+  reason: string;
+  createdBy?: string;
+  recordedBy?: string;
+  createdAt: string;
 }
 
 /* =========================================================================
@@ -342,27 +670,127 @@ export interface BehaviorScoreRule {
 }
 
 /* =========================================================================
- * 4. الجدول الدراسي والمحتوى التعليمي (Schedule & Lesson Content)
+ * 4. الجدول الدراسي والمحتوى التعليمي (Schedule & Lesson Content Engine)
  * ========================================================================= */
 export interface ScheduleItem {
   id: string;
   academicYear: string;
+  academicYearId?: string;
   term?: string; // الترم الأول / الترم الثاني
+  termId?: string;
   stage?: string;
   grade: string;
   classroom: string;
   dayName: string; // الأحد، الإثنين...
+  dayOfWeek?: string;
   periodNumber: number; // رقم الحصة (1, 2, 3...)
+  periodId?: number;
   startTime: string; // "08:00"
   endTime: string; // "08:45"
   subject: string; // الرياضيات، اللغة العربية...
+  subjectId?: string;
   teacherId?: string;
   teacherName?: string;
   roomNumber?: string;
+  roomId?: string;
+  locationId?: string;
+  isActive?: boolean;
   notes?: string;
 }
 
 export type ClassPeriodSchedule = ScheduleItem;
+
+export interface ScheduleSubstitution {
+  id: string; // "SUB-2026-10-13-SCH01"
+  date: string; // YYYY-MM-DD
+  scheduleItemId: string;
+  periodNumber: number;
+  dayOfWeek: string;
+  originalTeacherId: string;
+  originalTeacherName: string;
+  substituteTeacherId: string;
+  substituteTeacherName: string;
+  subject: string;
+  grade: string;
+  classroom: string;
+  reason: string;
+  notes?: string;
+  status?: 'PENDING' | 'APPROVED' | 'CANCELLED' | 'ACTIVE' | string;
+  assignedBy?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type LessonDeliveryStatus = 
+  | 'Scheduled' 
+  | 'Delivered' 
+  | 'Partially Delivered' 
+  | 'Cancelled' 
+  | 'Substituted' 
+  | 'Not Recorded';
+
+export interface LessonInstance {
+  id: string;
+  scheduleItemId: string;
+  academicYearId?: string;
+  academicYear?: string;
+  termId?: string;
+  term?: string;
+  date: string;
+  periodNumber: number;
+  teacherId: string;
+  teacherName: string;
+  subjectId?: string;
+  subject: string;
+  grade: string;
+  classroom: string;
+  deliveryStatus: LessonDeliveryStatus;
+  lessonTitle?: string;
+  lessonDescription?: string;
+  bookPages?: string;
+  homework?: string;
+  links?: LessonLink[];
+  recordedBy?: string;
+  recordedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ScheduleConflictType = 'TEACHER_DOUBLE_BOOKING' | 'CLASSROOM_DOUBLE_BOOKING' | 'ROOM_DOUBLE_BOOKING' | 'MAX_SUBJECT_EXCEEDED';
+
+export interface ScheduleConflict {
+  type: ScheduleConflictType;
+  severity: 'BLOCK' | 'WARNING';
+  message: string;
+  conflictingItemIds: string[];
+  dayName: string;
+  periodNumber: number;
+}
+
+export interface LocationItem {
+  id: string;
+  name: string; // الفصل، المعمل، الملعب، الفناء، الممر، البوابة، الحافلة
+  code?: string;
+  type?: 'classroom' | 'lab' | 'sports' | 'outdoor' | 'bus' | 'other' | 'معمل' | 'ملعب' | 'مسرح' | 'مكتبة' | string;
+  capacity?: number;
+  isActive: boolean;
+}
+
+export interface ConflictRuleConfig {
+  blockTeacherDoubleBooking?: boolean;
+  preventTeacherDoubleBooking?: boolean;
+  blockClassroomDoubleBooking?: boolean;
+  preventRoomDoubleBooking?: boolean;
+  preventStudentGroupDoubleBooking?: boolean;
+  blockRoomDoubleBooking?: boolean;
+  warnMaxDailySubjectLimit?: boolean;
+  maxDailySubjectLimit?: number;
+  maxTeacherDailyPeriods?: number;
+  maxConsecutiveTeacherPeriods?: number;
+  warnOnSubjectRepetitionPerDay?: boolean;
+  warnOnHeavySubjectsInEndPeriods?: boolean;
+}
 
 export interface LessonLink {
   id: string;
@@ -374,6 +802,7 @@ export interface LessonLink {
 export interface LessonContent {
   id: string;
   scheduleId?: string;
+  lessonInstanceId?: string;
   date: string; // YYYY-MM-DD
   periodNumber: number;
   teacherId: string;
@@ -387,6 +816,7 @@ export interface LessonContent {
   bookPages?: string;
   homework?: string;
   links: LessonLink[];
+  deliveryStatus?: LessonDeliveryStatus;
   createdAt: string;
 }
 
@@ -829,6 +1259,16 @@ export interface SystemSettings {
   departments: DepartmentItem[];
   jobTitles: JobTitleItem[];
   holidays: SchoolHoliday[];
+  academicYears?: AcademicYear[];
+  promotionRules?: PromotionRule[];
+  positiveBehaviorTypes?: PositiveBehaviorType[];
+  locations?: LocationItem[];
+  conflictRules?: ConflictRuleConfig;
+  attendanceLockPolicy?: {
+    allowAutoAbsentOnApproval: boolean;
+    allowTeacherEditAfterLockWithPermission: boolean;
+    maxDaysRetroactiveApproval: number;
+  };
   
   // الحضور والسلوك
   scheduleConfig: ScheduleConfig;
@@ -955,3 +1395,6 @@ export interface SyncStatus {
 }
 
 export type SyncState = SyncStatus;
+
+// Re-export extended modern entities
+export * from './types_extended';

@@ -20,6 +20,7 @@ import { Student } from '../../types';
 import { storageService } from '../../services/storageService';
 import { ImportWizardModal } from '../import/ImportWizardModal';
 import { StudentProfileModal } from './StudentProfileModal';
+import { StudentPromotionWizard } from './StudentPromotionWizard';
 import { formatEgyptianDate } from '../../utils/egyptianTime';
 
 export const StudentsView: React.FC = () => {
@@ -33,6 +34,7 @@ export const StudentsView: React.FC = () => {
   // Modals state
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isPromotionWizardOpen, setIsPromotionWizardOpen] = useState(false);
   const [selectedStudentForProfile, setSelectedStudentForProfile] = useState<Student | null>(null);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -211,6 +213,14 @@ export const StudentsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setIsPromotionWizardOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200 transition-colors shadow-xs"
+          >
+            <GraduationCap className="w-4 h-4 text-indigo-600" />
+            <span>معالج ترحيل الطلاب</span>
+          </button>
+
           <button
             onClick={() => setIsImportModalOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl border border-slate-300 transition-colors"
@@ -694,6 +704,18 @@ export const StudentsView: React.FC = () => {
           defaultMode="students"
           onClose={() => setIsImportModalOpen(false)}
           onImportComplete={reloadStudents}
+        />
+      )}
+
+      {/* Promotion Wizard Modal */}
+      {isPromotionWizardOpen && (
+        <StudentPromotionWizard
+          isOpen={isPromotionWizardOpen}
+          onClose={() => setIsPromotionWizardOpen(false)}
+          onSuccess={() => {
+            reloadStudents();
+            setIsPromotionWizardOpen(false);
+          }}
         />
       )}
     </div>

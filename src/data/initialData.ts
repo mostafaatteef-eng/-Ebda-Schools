@@ -1,13 +1,18 @@
 import {
   AcademicStage,
+  AcademicYear,
   AlertRuleItem,
   AllowanceTypeItem,
   AttendanceRecord,
   AuditLogEntry,
+  BehaviorCase,
   BehaviorLevelItem,
+  BehaviorScoreLedger,
   BehaviorScoreRule,
   BehaviorType,
+  ClassAttendanceRecord,
   ClassroomItem,
+  ConflictRuleConfig,
   DashboardSettings,
   DeductionTypeItem,
   DepartmentItem,
@@ -19,18 +24,27 @@ import {
   JobTitleItem,
   LeaveRecord,
   LeaveTypeConfig,
+  LessonInstance,
+  LocationItem,
+  ParentCommunicationLog,
   ParentPortalSettings,
   PaymentInstallmentPlan,
   PaymentMethodConfig,
   PayrollRule,
   PermissionMatrix,
   PermissionTypeConfig,
+  PositiveBehaviorType,
+  PromotionRule,
   ScheduleConfig,
+  ScheduleSubstitution,
   SchoolHoliday,
   SocialSpecialistSettings,
   Student,
+  StudentAttendanceRecord,
   StudentAttendanceRules,
   StudentAttendanceStatusConfig,
+  StudentEnrollment,
+  StudentTransferHistory,
   SubjectItem,
   SystemSettings,
   TeacherAttendanceRules,
@@ -587,6 +601,209 @@ export const DEFAULT_PAYROLL_RULES: PayrollRule = {
   socialInsuranceRate: 11, // حصة الموظف في التأمينات الاجتماعية بمصر
 };
 
+export const DEFAULT_ACADEMIC_YEARS: AcademicYear[] = [
+  {
+    id: 'AY_2025_2026',
+    name: 'العام الدراسي 2025/2026',
+    code: '2025-2026',
+    startDate: '2025-09-20',
+    endDate: '2026-06-15',
+    status: 'ACTIVE',
+    terms: [
+      {
+        id: 'TERM_1_2526',
+        name: 'الفصل الدراسي الأول',
+        code: 'T1',
+        startDate: '2025-09-20',
+        endDate: '2026-01-22',
+        status: 'ACTIVE',
+        isCurrent: true,
+      },
+      {
+        id: 'TERM_2_2526',
+        name: 'الفصل الدراسي الثاني',
+        code: 'T2',
+        startDate: '2026-02-07',
+        endDate: '2026-06-15',
+        status: 'UPCOMING',
+        isCurrent: false,
+      },
+    ],
+    isDefault: true,
+    isLocked: false,
+    notes: 'العام الدراسي النشط الحالي للمدرسة',
+  },
+  {
+    id: 'AY_2024_2025',
+    name: 'العام الدراسي 2024/2025',
+    code: '2024-2025',
+    startDate: '2024-09-21',
+    endDate: '2025-06-12',
+    status: 'CLOSED',
+    terms: [
+      {
+        id: 'TERM_1_2425',
+        name: 'الفصل الدراسي الأول',
+        code: 'T1',
+        startDate: '2024-09-21',
+        endDate: '2025-01-23',
+        status: 'CLOSED',
+        isCurrent: false,
+      },
+      {
+        id: 'TERM_2_2425',
+        name: 'الفصل الدراسي الثاني',
+        code: 'T2',
+        startDate: '2025-02-08',
+        endDate: '2025-06-12',
+        status: 'CLOSED',
+        isCurrent: false,
+      },
+    ],
+    isDefault: false,
+    isLocked: true,
+    notes: 'العام الدراسي السابق - مغلق للأرشفة',
+  },
+];
+
+export const DEFAULT_PROMOTION_RULES: PromotionRule[] = [
+  {
+    id: 'PROM_PRI_1_2',
+    sourceGrade: 'الصف الأول الابتدائي',
+    targetGrade: 'الصف الثاني الابتدائي',
+    ruleType: 'AUTOMATIC_ALL',
+    minAttendancePercentage: 75,
+    minBehaviorScore: 60,
+    isActive: true,
+  },
+  {
+    id: 'PROM_PRI_2_3',
+    sourceGrade: 'الصف الثاني الابتدائي',
+    targetGrade: 'الصف الثالث الابتدائي',
+    ruleType: 'AUTOMATIC_ALL',
+    minAttendancePercentage: 75,
+    minBehaviorScore: 60,
+    isActive: true,
+  },
+  {
+    id: 'PROM_PREP_1_2',
+    sourceGrade: 'الصف الأول الإعدادي',
+    targetGrade: 'الصف الثاني الإعدادي',
+    ruleType: 'AUTOMATIC_ALL',
+    minAttendancePercentage: 75,
+    minBehaviorScore: 60,
+    isActive: true,
+  },
+  {
+    id: 'PROM_PREP_2_3',
+    sourceGrade: 'الصف الثاني الإعدادي',
+    targetGrade: 'الصف الثالث الإعدادي',
+    ruleType: 'AUTOMATIC_ALL',
+    minAttendancePercentage: 75,
+    minBehaviorScore: 60,
+    isActive: true,
+  },
+  {
+    id: 'PROM_SEC_1_2',
+    sourceGrade: 'الصف الأول الثانوي',
+    targetGrade: 'الصف الثاني الثانوي',
+    ruleType: 'MANUAL_SELECTION',
+    minAttendancePercentage: 80,
+    minBehaviorScore: 65,
+    isActive: true,
+  },
+  {
+    id: 'PROM_SEC_2_3',
+    sourceGrade: 'الصف الثاني الثانوي',
+    targetGrade: 'الصف الثالث الثانوي',
+    ruleType: 'MANUAL_SELECTION',
+    minAttendancePercentage: 80,
+    minBehaviorScore: 65,
+    isActive: true,
+  },
+  {
+    id: 'PROM_SEC_3_GRAD',
+    sourceGrade: 'الصف الثالث الثانوي',
+    targetGrade: 'متخرج',
+    ruleType: 'MANUAL_SELECTION',
+    minAttendancePercentage: 80,
+    minBehaviorScore: 65,
+    isActive: true,
+  },
+];
+
+export const DEFAULT_POSITIVE_BEHAVIOR_TYPES: PositiveBehaviorType[] = [
+  {
+    id: 'POS_001',
+    name: 'المشاركة الفعالة والتميز الأكاديمي',
+    category: 'أكاديمي',
+    points: 5,
+    description: 'المشاركة الإيجابية والتفوق داخل الحصص الدراسية',
+    icon: 'Award',
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    id: 'POS_002',
+    name: 'مساعدة الزملاء وروح التعاون الإيجابي',
+    category: 'اجتماعي',
+    points: 5,
+    description: 'دعم الزملاء والعمل الجماعي المثمر والتطوع',
+    icon: 'Heart',
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    id: 'POS_003',
+    name: 'الانضباط التام ونظافة المكان',
+    category: 'انضباط',
+    points: 3,
+    description: 'الالتزام التام بالنظافة والمظهر والهدوء',
+    icon: 'ShieldCheck',
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    id: 'POS_004',
+    name: 'التميز في الأنشطة المدرسية والمسابقات',
+    category: 'أنشطة',
+    points: 10,
+    description: 'الفوز ببطولة أو تقديم فقرة مميزة بالإذاعة المدرسية',
+    icon: 'Trophy',
+    isActive: true,
+    sortOrder: 4,
+  },
+  {
+    id: 'POS_005',
+    name: 'الأمانة وتقديم سلوك أخلاقي مثالي',
+    category: 'أخلاقي',
+    points: 10,
+    description: 'تسليم مفقودات أو إظهار أمانة وشجاعة أدبية فائقة',
+    icon: 'Star',
+    isActive: true,
+    sortOrder: 5,
+  },
+];
+
+export const DEFAULT_LOCATIONS: LocationItem[] = [
+  { id: 'LOC_LAB_1', name: 'معمل الحاسب الآلي 1', code: 'LAB-COMP-1', type: 'معمل', capacity: 30, isActive: true },
+  { id: 'LOC_LAB_2', name: 'معمل العلوم والفيزياء', code: 'LAB-SCI-1', type: 'معمل', capacity: 35, isActive: true },
+  { id: 'LOC_PLAYGROUND', name: 'الملعب الرياضي الرئيسي', code: 'FIELD-MAIN', type: 'ملعب', capacity: 100, isActive: true },
+  { id: 'LOC_HALL_1', name: 'المسرح المدرسي والقاعة الكبرى', code: 'HALL-MAIN', type: 'مسرح', capacity: 250, isActive: true },
+  { id: 'LOC_LIBRARY', name: 'المكتبة المدرسية المركزية', code: 'LIB-CENTRAL', type: 'مكتبة', capacity: 50, isActive: true },
+  { id: 'LOC_ROBOTICS', name: 'معمل الروبوتات والذكاء الاصطناعي', code: 'LAB-ROBOT', type: 'معمل', capacity: 25, isActive: true },
+];
+
+export const DEFAULT_CONFLICT_RULES: ConflictRuleConfig = {
+  preventTeacherDoubleBooking: true,
+  preventRoomDoubleBooking: true,
+  preventStudentGroupDoubleBooking: true,
+  maxTeacherDailyPeriods: 6,
+  maxConsecutiveTeacherPeriods: 3,
+  warnOnSubjectRepetitionPerDay: true,
+  warnOnHeavySubjectsInEndPeriods: true,
+};
+
 export const INITIAL_SETTINGS: SystemSettings = {
   schoolName: 'المدارس الوطنية للعلوم التقنية - NTSS',
   shortSchoolName: 'NTSS Schools',
@@ -597,7 +814,7 @@ export const INITIAL_SETTINGS: SystemSettings = {
   schoolEmail: 'contact@ntss-schools.edu.eg',
   schoolWebsite: 'https://ntss-schools.edu.eg',
   currentAcademicYear: '2025/2026',
-  currentTerm: 'الترم الأول',
+  currentTerm: 'الفصل الدراسي الأول',
   academicYearStartDate: '2025-09-20',
   academicYearEndDate: '2026-06-15',
   country: 'مصر',
@@ -624,6 +841,12 @@ export const INITIAL_SETTINGS: SystemSettings = {
   departments: DEFAULT_DEPARTMENTS,
   jobTitles: DEFAULT_JOB_TITLES,
   holidays: DEFAULT_HOLIDAYS,
+
+  academicYears: DEFAULT_ACADEMIC_YEARS,
+  promotionRules: DEFAULT_PROMOTION_RULES,
+  positiveBehaviorTypes: DEFAULT_POSITIVE_BEHAVIOR_TYPES,
+  locations: DEFAULT_LOCATIONS,
+  conflictRules: DEFAULT_CONFLICT_RULES,
   
   scheduleConfig: DEFAULT_SCHEDULE_CONFIG,
   studentAttendanceStatuses: DEFAULT_STUDENT_ATTENDANCE_STATUSES,
@@ -674,6 +897,15 @@ export const INITIAL_USERS: User[] = [];
 export const INITIAL_LEAVES: LeaveRecord[] = [];
 export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [];
 export const INITIAL_STUDENTS: Student[] = [];
+export const INITIAL_STUDENT_ENROLLMENTS: StudentEnrollment[] = [];
+export const INITIAL_STUDENT_TRANSFERS: StudentTransferHistory[] = [];
+export const INITIAL_STUDENT_ATTENDANCE: StudentAttendanceRecord[] = [];
+export const INITIAL_CLASS_ATTENDANCE: ClassAttendanceRecord[] = [];
+export const INITIAL_BEHAVIOR_CASES: BehaviorCase[] = [];
+export const INITIAL_BEHAVIOR_LEDGER: BehaviorScoreLedger[] = [];
+export const INITIAL_SCHEDULE_SUBSTITUTIONS: ScheduleSubstitution[] = [];
+export const INITIAL_LESSON_INSTANCES: LessonInstance[] = [];
+export const INITIAL_PARENT_COMMUNICATIONS: ParentCommunicationLog[] = [];
 
 export function generateInitialAttendanceRecords(): AttendanceRecord[] {
   return [];

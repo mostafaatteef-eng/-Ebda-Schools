@@ -17,6 +17,7 @@ import { StudentAttendanceView } from './components/students/StudentAttendanceVi
 import { BehaviorView } from './components/behavior/BehaviorView';
 import { TeacherPortalView } from './components/schedule/TeacherPortalView';
 import { ParentPortalView } from './components/parent/ParentPortalView';
+import { ParentDayView } from './components/parent/ParentDayView';
 import { DailyAttendanceView } from './components/attendance/DailyAttendanceView';
 import { MonthlyMatrixView } from './components/attendance/MonthlyMatrixView';
 import { AnnualSummaryView } from './components/summary/AnnualSummaryView';
@@ -27,6 +28,8 @@ import { ReportsView } from './components/reports/ReportsView';
 import { UsersView } from './components/users/UsersView';
 import { AuditLogsView } from './components/audit/AuditLogsView';
 import { SettingsView } from './components/settings/SettingsView';
+import { MasterDataManagerView } from './components/masterdata/MasterDataManagerView';
+import { BackupExportView } from './components/backup/BackupExportView';
 import { LoginView } from './components/auth/LoginView';
 
 export default function App() {
@@ -67,85 +70,12 @@ export default function App() {
   };
 
   const renderActiveView = () => {
-    // 1. Strict Payroll Guard: ADMIN ONLY
-    if (activeTab === 'payroll' && currentUser?.role !== 'Admin') {
+    // Role-based security guard
+    if (activeTab === 'payroll' && currentUser.role !== 'Admin') {
       return (
-        <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-rose-200 shadow-xs space-y-4 my-12">
-          <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto text-2xl font-bold">
-            🔒
-          </div>
-          <h2 className="text-lg font-black text-slate-900">غير مصرح بالوصول إلى مسير الرواتب</h2>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            الوصول إلى قسم الرواتب والأمور المالية مخصص حصرياً لمدير النظام (Admin) للحفاظ على سرية البيانات المالية.
-          </p>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className="px-5 py-2.5 bg-[#008e8b] hover:bg-[#007775] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-          >
-            العودة إلى لوحة التحكم
-          </button>
-        </div>
-      );
-    }
-
-    // 2. Strict User / Settings / Payroll Management Guard
-    if ((activeTab === 'users' || activeTab === 'settings' || activeTab === 'payroll' || activeTab === 'audit') && currentUser?.role !== 'Admin') {
-      return (
-        <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-rose-200 shadow-xs space-y-4 my-12">
-          <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto text-2xl font-bold">
-            🛡️
-          </div>
-          <h2 className="text-lg font-black text-slate-900">صلاحية مدير النظام مطلوبة (Admin Access Required)</h2>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            الوصول إلى مسير الرواتب، سجل الرقابة والعمليات، إدارة المستخدمين، وإعدادات النظام تتطلب حصراً حساب مدير النظام (Admin).
-          </p>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className="px-5 py-2.5 bg-[#008e8b] hover:bg-[#007775] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-          >
-            العودة إلى لوحة التحكم
-          </button>
-        </div>
-      );
-    }
-
-    // 3. Separation of Concerns Guards
-    if ((activeTab === 'students' || activeTab === 'student_attendance') && currentUser?.role === 'TeacherAffairs') {
-      return (
-        <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-amber-200 shadow-xs space-y-4 my-12">
-          <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto text-2xl font-bold">
-            ⚠️
-          </div>
-          <h2 className="text-lg font-black text-slate-900">القسم خاص بشؤون الطلاب</h2>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            حساب شؤون المعلمين مخصص لدوام وسجلات المعلمين والموظفين فقط.
-          </p>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-          >
-            العودة إلى لوحة التحكم
-          </button>
-        </div>
-      );
-    }
-
-    if ((activeTab === 'employees' || activeTab === 'daily_attendance' || activeTab === 'monthly_matrix') && currentUser?.role === 'StudentAffairs') {
-      return (
-        <div className="bg-white rounded-3xl p-8 max-w-lg mx-auto text-center border border-amber-200 shadow-xs space-y-4 my-12">
-          <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto text-2xl font-bold">
-            ⚠️
-          </div>
-          <h2 className="text-lg font-black text-slate-900">القسم خاص بشؤون المعلمين والعاملين</h2>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            حساب شؤون الطلاب مخصص لسجلات وحضور الطلاب والمدرسة فقط.
-          </p>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className="px-5 py-2.5 bg-[#008e8b] hover:bg-[#007775] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-          >
-            العودة إلى لوحة التحكم
-          </button>
+        <div className="bg-rose-50 border border-rose-200 rounded-3xl p-8 text-center text-rose-800">
+          <h2 className="text-lg font-bold">غير مصرح بالدخول (403 Forbidden)</h2>
+          <p className="text-xs mt-2">عذراً، مسير الرواتب والمحرك المالي محمي ومقتصر فقط على حساب الإدارة العليا.</p>
         </div>
       );
     }
@@ -174,6 +104,14 @@ export default function App() {
 
       case 'teacher_portal':
         return <TeacherPortalView />;
+
+      case 'parent_day_view':
+        return (
+          <ParentDayView
+            currentUser={currentUser}
+            onNavigateToFullPortal={() => setActiveTab('parent_portal')}
+          />
+        );
 
       case 'parent_portal':
         return <ParentPortalView />;
@@ -233,6 +171,12 @@ export default function App() {
           />
         );
 
+      case 'master_data':
+        return <MasterDataManagerView />;
+
+      case 'backup':
+        return <BackupExportView />;
+
       case 'reports':
         return (
           <ReportsView
@@ -291,6 +235,7 @@ export default function App() {
         onLogout={handleLogout}
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         onOpenSettings={() => setActiveTab('settings')}
+        onNavigate={tab => setActiveTab(tab)}
       />
 
       <div className="flex-1 flex overflow-hidden">

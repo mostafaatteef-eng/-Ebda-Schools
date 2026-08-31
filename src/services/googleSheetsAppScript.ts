@@ -14,8 +14,8 @@
 
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * ==============================================================================
- * Google Apps Script - HR Attendance Management System Backend API
- * نظام إدارة الحضور والانصراف والموارد البشرية - خادم المعالجة وقاعدة البيانات
+ * Google Apps Script - Comprehensive School Management System Backend API
+ * نظام إدارة المدارس المتكامل وشؤون الطلاب والعام الدراسي والحضور والجدول والسلوك
  * ==============================================================================
  * 
  * Deployment Instructions:
@@ -24,7 +24,7 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * 3. Replace all code with this script.
  * 4. Click Deploy (نشر) -> New deployment (نشر جديد).
  * 5. Select type: Web App (تطبيق ويب).
- * 6. Set Description: "HR Production Backend".
+ * 6. Set Description: "School Management Production Backend".
  * 7. Set Execute as: "Me" (أنا).
  * 8. Set Who has access: "Anyone" (أي مستخدم).
  * 9. Click Deploy.
@@ -39,7 +39,26 @@ var SHEETS = {
   SETTINGS: 'Settings',
   AUDIT_LOGS: 'Audit_Logs',
   MONTHLY_SUMMARY: 'Monthly_Summary',
-  ANNUAL_SUMMARY: 'Annual_Summary'
+  ANNUAL_SUMMARY: 'Annual_Summary',
+  STUDENTS: 'Students',
+  STUDENT_ATTENDANCE: 'Student_Attendance',
+  CLASS_ATTENDANCE: 'Class_Attendance',
+  BEHAVIOR_TYPES: 'Behavior_Types',
+  POSITIVE_BEHAVIOR_TYPES: 'Positive_Behavior_Types',
+  BEHAVIOR_VIOLATIONS: 'Behavior_Violations',
+  BEHAVIOR_LEDGER: 'Behavior_Ledger',
+  BEHAVIOR_CASES: 'Behavior_Cases',
+  SCHEDULE: 'Schedule',
+  SCHEDULE_SUBSTITUTIONS: 'Schedule_Substitutions',
+  LESSON_INSTANCES: 'Lesson_Instances',
+  LESSON_CONTENT: 'Lesson_Content',
+  PAYROLL: 'Payroll',
+  ACADEMIC_YEARS: 'Academic_Years',
+  STUDENT_ENROLLMENTS: 'Student_Enrollments',
+  STUDENT_TRANSFERS: 'Student_Transfers',
+  PROMOTION_RULES: 'Promotion_Rules',
+  PARENT_COMMUNICATIONS: 'Parent_Communications',
+  LOCATIONS: 'Locations'
 };
 
 /**
@@ -62,7 +81,26 @@ function doGet(e) {
         leaves: getSheetData(ss, SHEETS.LEAVES),
         permissions: getSheetData(ss, SHEETS.PERMISSIONS),
         settings: getSettingsData(ss),
-        auditLogs: getSheetData(ss, SHEETS.AUDIT_LOGS)
+        auditLogs: getSheetData(ss, SHEETS.AUDIT_LOGS),
+        students: getSheetData(ss, SHEETS.STUDENTS),
+        studentAttendance: getSheetData(ss, SHEETS.STUDENT_ATTENDANCE),
+        classAttendance: getSheetData(ss, SHEETS.CLASS_ATTENDANCE),
+        behaviorTypes: getSheetData(ss, SHEETS.BEHAVIOR_TYPES),
+        positiveBehaviorTypes: getSheetData(ss, SHEETS.POSITIVE_BEHAVIOR_TYPES),
+        behaviorViolations: getSheetData(ss, SHEETS.BEHAVIOR_VIOLATIONS),
+        behaviorLedger: getSheetData(ss, SHEETS.BEHAVIOR_LEDGER),
+        behaviorCases: getSheetData(ss, SHEETS.BEHAVIOR_CASES),
+        schedule: getSheetData(ss, SHEETS.SCHEDULE),
+        scheduleSubstitutions: getSheetData(ss, SHEETS.SCHEDULE_SUBSTITUTIONS),
+        lessonInstances: getSheetData(ss, SHEETS.LESSON_INSTANCES),
+        lessonContent: getSheetData(ss, SHEETS.LESSON_CONTENT),
+        payroll: getSheetData(ss, SHEETS.PAYROLL),
+        academicYears: getSheetData(ss, SHEETS.ACADEMIC_YEARS),
+        studentEnrollments: getSheetData(ss, SHEETS.STUDENT_ENROLLMENTS),
+        studentTransfers: getSheetData(ss, SHEETS.STUDENT_TRANSFERS),
+        promotionRules: getSheetData(ss, SHEETS.PROMOTION_RULES),
+        parentCommunications: getSheetData(ss, SHEETS.PARENT_COMMUNICATIONS),
+        locations: getSheetData(ss, SHEETS.LOCATIONS)
       };
     } else if (action === 'login') {
       var username = (params.username || '').trim().toLowerCase();
@@ -79,6 +117,8 @@ function doGet(e) {
       }
     } else if (action === 'getEmployees') {
       output.data = getSheetData(ss, SHEETS.EMPLOYEES);
+    } else if (action === 'getStudents') {
+      output.data = getSheetData(ss, SHEETS.STUDENTS);
     } else if (action === 'getAttendance') {
       var allAtt = getSheetData(ss, SHEETS.ATTENDANCE);
       if (params.date) {
@@ -86,12 +126,20 @@ function doGet(e) {
       } else {
         output.data = allAtt;
       }
+    } else if (action === 'getStudentAttendance') {
+      output.data = getSheetData(ss, SHEETS.STUDENT_ATTENDANCE);
+    } else if (action === 'getClassAttendance') {
+      output.data = getSheetData(ss, SHEETS.CLASS_ATTENDANCE);
     } else if (action === 'getLeaves') {
       output.data = getSheetData(ss, SHEETS.LEAVES);
     } else if (action === 'getPermissions') {
       output.data = getSheetData(ss, SHEETS.PERMISSIONS);
     } else if (action === 'getUsers') {
       output.data = getSanitizedUsers(ss);
+    } else if (action === 'getAcademicYears') {
+      output.data = getSheetData(ss, SHEETS.ACADEMIC_YEARS);
+    } else if (action === 'getStudentEnrollments') {
+      output.data = getSheetData(ss, SHEETS.STUDENT_ENROLLMENTS);
     } else if (action === 'ping') {
       output.message = 'Server is running and connected successfully!';
       output.spreadsheetName = ss.getName();
@@ -151,18 +199,116 @@ function doPost(e) {
       if (payload.permissions && Array.isArray(payload.permissions)) setSheetData(ss, SHEETS.PERMISSIONS, payload.permissions);
       if (payload.settings) saveSettingsData(ss, payload.settings);
       if (payload.auditLogs && Array.isArray(payload.auditLogs)) setSheetData(ss, SHEETS.AUDIT_LOGS, payload.auditLogs);
+      if (payload.students && Array.isArray(payload.students)) setSheetData(ss, SHEETS.STUDENTS, payload.students);
+      if (payload.studentAttendance && Array.isArray(payload.studentAttendance)) setSheetData(ss, SHEETS.STUDENT_ATTENDANCE, payload.studentAttendance);
+      if (payload.classAttendance && Array.isArray(payload.classAttendance)) setSheetData(ss, SHEETS.CLASS_ATTENDANCE, payload.classAttendance);
+      if (payload.behaviorTypes && Array.isArray(payload.behaviorTypes)) setSheetData(ss, SHEETS.BEHAVIOR_TYPES, payload.behaviorTypes);
+      if (payload.positiveBehaviorTypes && Array.isArray(payload.positiveBehaviorTypes)) setSheetData(ss, SHEETS.POSITIVE_BEHAVIOR_TYPES, payload.positiveBehaviorTypes);
+      if (payload.behaviorViolations && Array.isArray(payload.behaviorViolations)) setSheetData(ss, SHEETS.BEHAVIOR_VIOLATIONS, payload.behaviorViolations);
+      if (payload.behaviorLedger && Array.isArray(payload.behaviorLedger)) setSheetData(ss, SHEETS.BEHAVIOR_LEDGER, payload.behaviorLedger);
+      if (payload.behaviorCases && Array.isArray(payload.behaviorCases)) setSheetData(ss, SHEETS.BEHAVIOR_CASES, payload.behaviorCases);
+      if (payload.schedule && Array.isArray(payload.schedule)) setSheetData(ss, SHEETS.SCHEDULE, payload.schedule);
+      if (payload.scheduleSubstitutions && Array.isArray(payload.scheduleSubstitutions)) setSheetData(ss, SHEETS.SCHEDULE_SUBSTITUTIONS, payload.scheduleSubstitutions);
+      if (payload.lessonInstances && Array.isArray(payload.lessonInstances)) setSheetData(ss, SHEETS.LESSON_INSTANCES, payload.lessonInstances);
+      if (payload.lessonContent && Array.isArray(payload.lessonContent)) setSheetData(ss, SHEETS.LESSON_CONTENT, payload.lessonContent);
+      if (payload.payroll && Array.isArray(payload.payroll)) setSheetData(ss, SHEETS.PAYROLL, payload.payroll);
+      if (payload.academicYears && Array.isArray(payload.academicYears)) setSheetData(ss, SHEETS.ACADEMIC_YEARS, payload.academicYears);
+      if (payload.studentEnrollments && Array.isArray(payload.studentEnrollments)) setSheetData(ss, SHEETS.STUDENT_ENROLLMENTS, payload.studentEnrollments);
+      if (payload.studentTransfers && Array.isArray(payload.studentTransfers)) setSheetData(ss, SHEETS.STUDENT_TRANSFERS, payload.studentTransfers);
+      if (payload.promotionRules && Array.isArray(payload.promotionRules)) setSheetData(ss, SHEETS.PROMOTION_RULES, payload.promotionRules);
+      if (payload.parentCommunications && Array.isArray(payload.parentCommunications)) setSheetData(ss, SHEETS.PARENT_COMMUNICATIONS, payload.parentCommunications);
+      if (payload.locations && Array.isArray(payload.locations)) setSheetData(ss, SHEETS.LOCATIONS, payload.locations);
       output.message = 'Full synchronization completed successfully!';
     } else if (action === 'saveAttendance' && payload) {
       upsertAttendanceRecord(ss, payload);
       output.message = 'Attendance record saved successfully!';
     } else if (action === 'bulkSaveAttendance' && payload && Array.isArray(payload)) {
-      payload.forEach(function(rec) {
-        upsertAttendanceRecord(ss, rec);
-      });
+      payload.forEach(function(rec) { upsertAttendanceRecord(ss, rec); });
       output.message = 'Bulk attendance (' + payload.length + ' records) saved successfully!';
-    } else if (action === 'deleteAttendance' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.ATTENDANCE, 'id', payload.id);
-      output.message = 'Attendance record deleted successfully!';
+    } else if (action === 'saveStudent' && payload) {
+      upsertRecord(ss, SHEETS.STUDENTS, 'id', payload);
+      output.message = 'Student record saved successfully!';
+    } else if (action === 'bulkSaveStudents' && payload && Array.isArray(payload)) {
+      setSheetData(ss, SHEETS.STUDENTS, payload);
+      output.message = 'Bulk students saved successfully!';
+    } else if (action === 'deleteStudent' && payload && payload.id) {
+      deleteRecord(ss, SHEETS.STUDENTS, 'id', payload.id);
+      output.message = 'Student record deleted successfully!';
+    } else if (action === 'saveStudentAttendance' && payload) {
+      upsertRecord(ss, SHEETS.STUDENT_ATTENDANCE, 'id', payload);
+      output.message = 'Student attendance saved!';
+    } else if (action === 'bulkSaveStudentAttendance' && payload && Array.isArray(payload)) {
+      payload.forEach(function(rec) { upsertRecord(ss, SHEETS.STUDENT_ATTENDANCE, 'id', rec); });
+      output.message = 'Bulk student attendance saved!';
+    } else if (action === 'saveClassAttendance' && payload && Array.isArray(payload)) {
+      payload.forEach(function(rec) { upsertRecord(ss, SHEETS.CLASS_ATTENDANCE, 'id', rec); });
+      output.message = 'Class attendance saved!';
+    } else if (action === 'saveAcademicYear' && payload) {
+      upsertRecord(ss, SHEETS.ACADEMIC_YEARS, 'id', payload);
+      output.message = 'Academic year saved!';
+    } else if (action === 'deleteAcademicYear' && payload && payload.id) {
+      deleteRecord(ss, SHEETS.ACADEMIC_YEARS, 'id', payload.id);
+      output.message = 'Academic year deleted!';
+    } else if (action === 'saveStudentEnrollment' && payload) {
+      upsertRecord(ss, SHEETS.STUDENT_ENROLLMENTS, 'id', payload);
+      output.message = 'Student enrollment saved!';
+    } else if (action === 'batchSaveStudentEnrollments' && payload && Array.isArray(payload)) {
+      payload.forEach(function(rec) { upsertRecord(ss, SHEETS.STUDENT_ENROLLMENTS, 'id', rec); });
+      output.message = 'Batch student enrollments saved!';
+    } else if (action === 'saveStudentTransfer' && payload) {
+      appendRecord(ss, SHEETS.STUDENT_TRANSFERS, payload);
+      output.message = 'Student transfer saved!';
+    } else if (action === 'saveBehaviorType' && payload) {
+      upsertRecord(ss, SHEETS.BEHAVIOR_TYPES, 'id', payload);
+      output.message = 'Behavior type saved!';
+    } else if (action === 'deleteBehaviorType' && payload && payload.id) {
+      deleteRecord(ss, SHEETS.BEHAVIOR_TYPES, 'id', payload.id);
+      output.message = 'Behavior type deleted!';
+    } else if (action === 'savePositiveBehaviorType' && payload) {
+      upsertRecord(ss, SHEETS.POSITIVE_BEHAVIOR_TYPES, 'id', payload);
+      output.message = 'Positive behavior type saved!';
+    } else if (action === 'deletePositiveBehaviorType' && payload && payload.id) {
+      deleteRecord(ss, SHEETS.POSITIVE_BEHAVIOR_TYPES, 'id', payload.id);
+      output.message = 'Positive behavior type deleted!';
+    } else if (action === 'saveViolation' && payload) {
+      upsertRecord(ss, SHEETS.BEHAVIOR_VIOLATIONS, 'id', payload);
+      output.message = 'Violation record saved!';
+    } else if (action === 'deleteViolation' && payload && payload.id) {
+      deleteRecord(ss, SHEETS.BEHAVIOR_VIOLATIONS, 'id', payload.id);
+      output.message = 'Violation record deleted!';
+    } else if (action === 'addBehaviorLedger' && payload) {
+      appendRecord(ss, SHEETS.BEHAVIOR_LEDGER, payload);
+      output.message = 'Behavior ledger transaction saved!';
+    } else if (action === 'saveBehaviorCase' && payload) {
+      upsertRecord(ss, SHEETS.BEHAVIOR_CASES, 'id', payload);
+      output.message = 'Behavior case saved!';
+    } else if (action === 'saveScheduleItem' && payload) {
+      upsertRecord(ss, SHEETS.SCHEDULE, 'id', payload);
+      output.message = 'Schedule item saved!';
+    } else if (action === 'deleteScheduleItem' && payload && payload.id) {
+      deleteRecord(ss, SHEETS.SCHEDULE, 'id', payload.id);
+      output.message = 'Schedule item deleted!';
+    } else if (action === 'saveSubstitution' && payload) {
+      upsertRecord(ss, SHEETS.SCHEDULE_SUBSTITUTIONS, 'id', payload);
+      output.message = 'Schedule substitution saved!';
+    } else if (action === 'deleteSubstitution' && payload && payload.id) {
+      deleteRecord(ss, SHEETS.SCHEDULE_SUBSTITUTIONS, 'id', payload.id);
+      output.message = 'Schedule substitution deleted!';
+    } else if (action === 'saveLessonInstance' && payload) {
+      upsertRecord(ss, SHEETS.LESSON_INSTANCES, 'id', payload);
+      output.message = 'Lesson instance saved!';
+    } else if (action === 'saveLessonContent' && payload) {
+      upsertRecord(ss, SHEETS.LESSON_CONTENT, 'id', payload);
+      output.message = 'Lesson content saved!';
+    } else if (action === 'saveParentCommunication' && payload) {
+      appendRecord(ss, SHEETS.PARENT_COMMUNICATIONS, payload);
+      output.message = 'Parent communication log saved!';
+    } else if (action === 'saveLocation' && payload) {
+      upsertRecord(ss, SHEETS.LOCATIONS, 'id', payload);
+      output.message = 'Location saved!';
+    } else if (action === 'deleteLocation' && payload && payload.id) {
+      deleteRecord(ss, SHEETS.LOCATIONS, 'id', payload.id);
+      output.message = 'Location deleted!';
     } else if (action === 'saveEmployee' && payload) {
       upsertRecord(ss, SHEETS.EMPLOYEES, 'id', payload);
       output.message = 'Employee record saved successfully!';
@@ -175,12 +321,6 @@ function doPost(e) {
     } else if (action === 'deleteLeave' && payload && payload.id) {
       deleteRecord(ss, SHEETS.LEAVES, 'id', payload.id);
       output.message = 'Leave record deleted successfully!';
-    } else if (action === 'savePermission' && payload) {
-      upsertRecord(ss, SHEETS.PERMISSIONS, 'id', payload);
-      output.message = 'Permission record saved successfully!';
-    } else if (action === 'deletePermission' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.PERMISSIONS, 'id', payload.id);
-      output.message = 'Permission record deleted successfully!';
     } else if (action === 'saveUser' && payload) {
       upsertRecord(ss, SHEETS.USERS, 'username', payload);
       output.message = 'User record saved successfully!';
@@ -225,7 +365,7 @@ function authenticateUser(ss, inputUsername, inputPassword) {
       fullName: 'مدير النظام',
       role: 'Admin',
       status: 'Active',
-      department: 'الإدارة العامة',
+      department: 'الإدارة العامة والتوجيه',
       employeeId: 'EMP001',
       createdAt: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
       lastLogin: ''
@@ -258,7 +398,7 @@ function authenticateUser(ss, inputUsername, inputPassword) {
   var status = String(matchedUser.status || matchedUser.Status || matchedUser['الحالة'] || 'Active').trim();
   var isActive = (matchedUser.isActive === true || matchedUser.isActive === 'true' || matchedUser.isActive === undefined);
   if (status.toLowerCase() === 'inactive' || status.toLowerCase() === 'disabled' || status === 'معطل' || !isActive) {
-    return { success: false, message: 'هذا الحساب غير مفعل حالياً. يرجى مراجعة مدير النظام.' };
+    return { success: false, message: 'هذا الحساب غير مفعل حالياً. يرجى مراجعة إدارة المدرسة.' };
   }
 
   // Check Password (supports plain text or SHA-256 hash)
@@ -287,7 +427,7 @@ function authenticateUser(ss, inputUsername, inputPassword) {
     id: String(matchedUser.id || matchedUser.User_ID || matchedUser.userId || '001'),
     username: String(matchedUser.username || matchedUser.Username || inputUsername),
     fullName: String(matchedUser.fullName || matchedUser.Full_Name || matchedUser.name || matchedUser['الاسم'] || 'مستخدم النظام'),
-    role: String(matchedUser.role || matchedUser.Role || matchedUser['الصلاحية'] || 'HR'),
+    role: String(matchedUser.role || matchedUser.Role || matchedUser['الصلاحية'] || 'Admin'),
     status: status,
     department: String(matchedUser.department || matchedUser.Department || matchedUser['القسم'] || ''),
     employeeId: String(matchedUser.employeeId || matchedUser.Employee_ID || ''),
@@ -330,8 +470,25 @@ function initSheetsIfMissing(ss, forceFormat) {
     Permissions: ['id', 'employeeId', 'employeeName', 'department', 'date', 'permissionFrom', 'permissionTo', 'durationMinutes', 'permissionType', 'reason', 'status', 'createdAt'],
     Settings: ['key', 'value', 'updatedAt'],
     Audit_Logs: ['id', 'timestamp', 'username', 'userRole', 'action', 'entity', 'details', 'oldValue', 'newValue'],
-    Monthly_Summary: ['year', 'month', 'employeeId', 'employeeName', 'department', 'presentDays', 'lateDays', 'absentDays', 'totalLateMinutes', 'totalWorkingHours', 'leaveDays'],
-    Annual_Summary: ['year', 'employeeId', 'employeeName', 'department', 'jobTitle', 'attendanceRate', 'totalLateMinutes', 'remainingLeaves']
+    Students: ['id', 'studentCode', 'nationalId', 'name', 'gender', 'birthDate', 'grade', 'classroom', 'section', 'parentName', 'parentPhone', 'parentJob', 'address', 'status', 'initialBehaviorScore', 'notes', 'createdAt', 'updatedAt'],
+    Student_Attendance: ['id', 'studentId', 'studentName', 'grade', 'classroom', 'date', 'dayName', 'status', 'checkInTime', 'lateMinutes', 'earlyLeaveMinutes', 'isExcused', 'excuseReason', 'recordedBy', 'recordedAt', 'notes'],
+    Class_Attendance: ['id', 'studentId', 'studentName', 'grade', 'classroom', 'date', 'periodNumber', 'subject', 'teacherId', 'teacherName', 'status', 'participationScore', 'homeworkDone', 'materialsBrought', 'takenBy', 'takenAt', 'notes'],
+    Academic_Years: ['id', 'name', 'startDate', 'endDate', 'status', 'isDefault', 'isLocked', 'terms', 'workingDays', 'closedAt', 'closedBy', 'notes'],
+    Student_Enrollments: ['id', 'studentId', 'academicYearId', 'academicYearName', 'grade', 'classroom', 'section', 'enrollmentDate', 'status', 'promotionStatus', 'promotionNotes', 'createdAt', 'updatedAt'],
+    Student_Transfers: ['id', 'studentId', 'studentName', 'fromGrade', 'fromClassroom', 'toGrade', 'toClassroom', 'transferDate', 'reason', 'approvedBy', 'notes', 'createdAt'],
+    Behavior_Types: ['id', 'code', 'name', 'level', 'pointsDeducted', 'category', 'description', 'actionRequired', 'isActive'],
+    Positive_Behavior_Types: ['id', 'code', 'name', 'pointsAwarded', 'category', 'description', 'badgeIcon', 'isActive'],
+    Behavior_Violations: ['id', 'studentId', 'studentName', 'grade', 'classroom', 'violationId', 'violationName', 'level', 'pointsDeducted', 'date', 'dayName', 'location', 'periodNumber', 'description', 'actionTaken', 'parentNotified', 'parentNotificationDate', 'status', 'recordedBy', 'createdAt', 'resolvedAt', 'notes'],
+    Behavior_Ledger: ['id', 'studentId', 'studentName', 'academicYearId', 'date', 'type', 'points', 'balanceAfter', 'sourceType', 'sourceId', 'description', 'recordedBy', 'createdAt'],
+    Behavior_Cases: ['id', 'caseNumber', 'studentId', 'studentName', 'grade', 'classroom', 'title', 'reason', 'severity', 'status', 'openedBy', 'createdAt', 'updatedAt', 'resolvedAt', 'resolutionSummary', 'parentInvolvement', 'followups'],
+    Schedule: ['id', 'dayOfWeek', 'periodNumber', 'startTime', 'endTime', 'grade', 'classroom', 'subject', 'teacherId', 'teacherName', 'locationId', 'locationName', 'academicYearId', 'notes'],
+    Schedule_Substitutions: ['id', 'date', 'dayOfWeek', 'periodNumber', 'grade', 'classroom', 'subject', 'originalTeacherId', 'originalTeacherName', 'substituteTeacherId', 'substituteTeacherName', 'reason', 'status', 'assignedBy', 'notes', 'createdAt'],
+    Lesson_Instances: ['id', 'scheduleItemId', 'date', 'academicYearId', 'subject', 'grade', 'classroom', 'periodNumber', 'teacherId', 'teacherName', 'status', 'notes'],
+    Lesson_Content: ['id', 'date', 'dayName', 'periodNumber', 'grade', 'classroom', 'subject', 'teacherId', 'teacherName', 'lessonTitle', 'unit', 'objectives', 'homework', 'absenceCount', 'studentsCount', 'createdAt', 'notes'],
+    Payroll: ['id', 'employeeId', 'employeeName', 'nationalId', 'department', 'jobTitle', 'month', 'year', 'basicSalary', 'workingDays', 'presentDays', 'absentDays', 'lateDays', 'totalLateMinutes', 'overtimeHours', 'leaveDays', 'permissionHours', 'grossSalary', 'totalAllowances', 'totalDeductions', 'netSalary', 'status', 'calculatedAt', 'paidAt'],
+    Promotion_Rules: ['id', 'fromGrade', 'toGrade', 'minimumAttendanceRate', 'minimumBehaviorScore', 'autoAction', 'retainedGrade', 'retainedClassroom', 'requiresAdminApproval', 'isActive'],
+    Parent_Communications: ['id', 'studentId', 'studentName', 'date', 'type', 'reason', 'summary', 'parentResponse', 'outcome', 'recordedBy', 'createdAt'],
+    Locations: ['id', 'name', 'type', 'building', 'floor', 'capacity', 'facilities', 'isActive']
   };
 
   for (var name in sheetDefinitions) {
@@ -345,11 +502,10 @@ function initSheetsIfMissing(ss, forceFormat) {
       // If Users sheet is newly created, add initial admin user with password
       if (name === 'Users') {
         var nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
-        var initialUserRow = ['001', 'admin', 'admin123', 'مدير النظام', 'Admin', 'Active', 'الإدارة العامة', 'EMP001', nowStr, ''];
+        var initialUserRow = ['001', 'admin', 'admin123', 'مدير النظام', 'Admin', 'Active', 'الإدارة العامة والتوجيه', 'EMP001', nowStr, ''];
         sheet.appendRow(initialUserRow);
       }
     } else {
-      // If sheet already exists, verify that essential columns exist (especially 'password' in Users)
       var lastCol = sheet.getLastColumn();
       var lastRow = sheet.getLastRow();
 
@@ -359,7 +515,7 @@ function initSheetsIfMissing(ss, forceFormat) {
         styleHeaderRow(sheet, headers.length);
         if (name === 'Users') {
           var nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
-          var initialUserRow = ['001', 'admin', 'admin123', 'مدير النظام', 'Admin', 'Active', 'الإدارة العامة', 'EMP001', nowStr, ''];
+          var initialUserRow = ['001', 'admin', 'admin123', 'مدير النظام', 'Admin', 'Active', 'الإدارة العامة والتوجيه', 'EMP001', nowStr, ''];
           sheet.appendRow(initialUserRow);
         }
       } else if (name === 'Users') {
@@ -373,9 +529,6 @@ function initSheetsIfMissing(ss, forceFormat) {
   }
 }
 
-/**
- * Ensures the Users sheet has a dedicated 'password' column
- */
 function ensureUserSheetPasswordColumn(userSheet) {
   var lastCol = userSheet.getLastColumn();
   if (lastCol <= 0) return;
@@ -395,7 +548,6 @@ function ensureUserSheetPasswordColumn(userSheet) {
     }
   }
 
-  // If password column is missing in Users sheet, add it right after username or at the end
   if (!hasPassword) {
     if (usernameIndex >= 0) {
       userSheet.insertColumnAfter(usernameIndex + 1);
@@ -549,7 +701,6 @@ function upsertRecord(ss, sheetName, keyField, record) {
 
   var rowValues = headers.map(function(h, hIdx) {
     var val = record[h];
-    // If it's a password column and empty/undefined on update, keep existing password
     if ((h === 'password' || h === 'Password' || h === 'كلمة المرور' || h === 'كلمة_السر' || h === 'كلمه السر') && (!val || val === '') && existingRowData) {
       val = existingRowData[hIdx];
     }
@@ -648,3 +799,4 @@ function saveSettingsData(ss, settingsObj) {
   }
 }
 `;
+

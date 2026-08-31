@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   UserCheck,
   Users,
+  Sun,
 } from 'lucide-react';
 import { PermissionKey, User } from '../../types';
 import { hasPermission } from '../../utils/permissions';
@@ -29,11 +30,14 @@ export type ActiveTab =
   | 'behavior'
   | 'teacher_portal'
   | 'parent_portal'
+  | 'parent_day_view'
   | 'daily_attendance'
   | 'monthly_matrix'
   | 'employees'
   | 'payroll'
   | 'leaves'
+  | 'master_data'
+  | 'backup'
   | 'reports'
   | 'users'
   | 'settings'
@@ -134,8 +138,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           hideForRoles: ['Parent', 'TeacherAffairs'],
         },
         {
+          id: 'parent_day_view',
+          label: 'اليوم الدراسي لابنك',
+          icon: Sun,
+          badge: 'جديد',
+          showForRoles: ['Parent', 'Admin'],
+        },
+        {
           id: 'parent_portal',
-          label: 'بوابة ولي الأمر',
+          label: 'بوابة ولي الأمر الشاملة',
           icon: HeartHandshake,
           permission: 'parentPortal.access',
           showForRoles: ['Parent', 'Admin'],
@@ -187,6 +198,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'النظام والتقارير والرقابة',
       items: [
         {
+          id: 'master_data',
+          label: 'إدارة القوائم والتعريفات',
+          icon: Database,
+          adminOnly: true,
+          badge: 'Master Data',
+          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
+        },
+        {
+          id: 'backup',
+          label: 'النسخ الاحتياطي والتصدير',
+          icon: ShieldCheck,
+          adminOnly: true,
+          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
+        },
+        {
           id: 'reports',
           label: 'التقارير المدرسية',
           icon: FileText,
@@ -228,76 +254,67 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
+      {/* Sidebar Container */}
       <aside
-        className={`fixed top-16 right-0 bottom-0 w-64 bg-[#ffffff] border-l border-slate-200/80 p-3 z-40 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:h-[calc(100vh-4rem)] flex flex-col justify-between shrink-0 select-none shadow-xl lg:shadow-none ${
+        className={`fixed top-0 right-0 bottom-0 z-50 w-72 bg-white border-l border-slate-200/80 flex flex-col transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${
           isMobileOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <div className="space-y-4 overflow-y-auto custom-scrollbar flex-1 px-1 pt-1">
-          {navSections.map((section, idx) => {
-            const allowedItems = section.items.filter(item => {
-              // 1. Check Admin Only
-              if (item.adminOnly && userRole !== 'Admin') {
-                return false;
-              }
+        {/* Brand Header */}
+        <div className="h-16 px-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+          <NTSSLogo />
+          <button
+            onClick={handleCloseMobile}
+            className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+        </div>
 
-              // 2. Check Role Whitelist
-              if (item.showForRoles && !item.showForRoles.includes(userRole)) {
-                return false;
-              }
-
-              // 3. Check Role Blacklist
-              if (item.hideForRoles && item.hideForRoles.includes(userRole)) {
-                return false;
-              }
-
-              // 4. Check Granular Permission
-              if (item.permission) {
-                return hasPermission(currentUser, item.permission);
-              }
-
+        {/* Navigation Sections */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+          {navSections.map(section => {
+            const visibleItems = section.items.filter(item => {
+              if (item.adminOnly && userRole !== 'Admin') return false;
+              if (item.hideForRoles && item.hideForRoles.includes(userRole)) return false;
+              if (item.showForRoles && !item.showForRoles.includes(userRole)) return false;
+              if (item.permission && !hasPermission(currentUser, item.permission)) return false;
               return true;
             });
 
-            if (allowedItems.length === 0) return null;
+            if (visibleItems.length === 0) return null;
 
             return (
-              <div key={idx} className="space-y-1">
-                <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase px-3 py-1">
+              <div key={section.title} className="space-y-1.5">
+                <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   {section.title}
                 </div>
-
                 <div className="space-y-0.5">
-                  {allowedItems.map(item => {
+                  {visibleItems.map(item => {
                     const Icon = item.icon;
                     const isActive = activeTab === item.id;
 
                     return (
                       <button
                         key={item.id}
-                        id={`nav-link-${item.id}`}
                         onClick={() => handleSelect(item.id)}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all cursor-pointer ${
                           isActive
                             ? 'bg-[#008e8b] text-white shadow-xs'
-                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5">
-                          <Icon
-                            className={`w-4 h-4 shrink-0 transition-transform ${
-                              isActive ? 'text-white' : 'text-slate-400'
-                            }`}
-                          />
+                        <div className="flex items-center gap-3">
+                          <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                           <span>{item.label}</span>
                         </div>
 
                         {item.badge && (
                           <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                            className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
                               isActive
                                 ? 'bg-white/20 text-white'
-                                : 'bg-teal-50 text-[#008e8b]'
+                                : 'bg-teal-50 text-[#008e8b] border border-teal-100'
                             }`}
                           >
                             {item.badge}
@@ -312,13 +329,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </div>
 
-        {/* Minimal Bottom Footer */}
-        <div className="pt-3 mt-2 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400">
-          <div className="flex items-center gap-1.5 font-semibold text-slate-600">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>نظام مدرسي متكامل</span>
+        {/* Sidebar Footer */}
+        <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+          <div className="text-[10px] text-slate-400 text-center font-medium">
+            نظام إدارة المدارس والموارد البشرية © 2026
           </div>
-          <span className="text-[10px] text-slate-400 font-mono">v3.0 Egypt</span>
         </div>
       </aside>
     </>
