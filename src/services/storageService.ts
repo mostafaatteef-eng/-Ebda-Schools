@@ -2,6 +2,9 @@ import {
   AcademicYear,
   AlertRuleItem,
   AllowanceTypeItem,
+  AttendanceDay,
+  AttendanceDayStatus,
+  AttendanceException,
   AttendanceRecord,
   AttendanceStatus,
   AuditLogEntry,
@@ -34,6 +37,7 @@ import {
   PromotionRule,
   ScheduleConfig,
   ScheduleItem,
+  SchedulePeriodItem,
   ScheduleSubstitution,
   Student,
   StudentAttendanceRecord,
@@ -81,7 +85,11 @@ import {
   DEFAULT_TEACHER_PORTAL_SETTINGS,
   INITIAL_SETTINGS,
 } from '../data/initialData';
-import { getCairoCurrentTime, getCairoNowISO, getEgyptianDayName } from '../utils/egyptianTime';
+import { getCairoCurrentDate, getCairoCurrentTime, getCairoNowISO, getEgyptianDayName } from '../utils/egyptianTime';
+import { generateClientSessionToken, hashPasswordSHA256, hashPlainSHA256 } from '../utils/cryptoUtils';
+import { buildUnifiedAttendanceRecord, calculateAttendanceMetrics } from '../utils/attendanceUtils';
+import { computeAttendanceDayReview, calculateStudentLateMinutes } from '../utils/attendanceEngine';
+import { SyncQueueService } from './syncQueueService';
 
 const STORAGE_KEYS = {
   SETTINGS: 'ntss_school_settings_v3',
@@ -94,6 +102,8 @@ const STORAGE_KEYS = {
   SYNC_STATUS: 'ntss_sync_status_v3',
   STUDENTS: 'ntss_students_v3',
   STUDENT_ATTENDANCE: 'ntss_student_attendance_v3',
+  ATTENDANCE_DAYS: 'ntss_attendance_days_v3',
+  ATTENDANCE_EXCEPTIONS: 'ntss_attendance_exceptions_v3',
   CLASS_ATTENDANCE: 'ntss_class_attendance_v3',
   BEHAVIOR_TYPES: 'ntss_behavior_types_v3',
   POSITIVE_BEHAVIOR_TYPES: 'ntss_positive_behavior_types_v3',
@@ -240,10 +250,11 @@ class StorageService {
       return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
     }
 
+    const inputHashed = await hashPasswordSHA256(cleanPassword);
     const settings = this.getSettings();
     const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
 
-    // 1. Try Backend Online Login First
+    // 1. Try Backend Online Login First (POST ONLY)
     if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
       try {
         const response = await fetch(scriptUrl, {
@@ -259,8 +270,12 @@ class StorageService {
         if (response.ok) {
           const result = await response.json();
           if (result.status === 'success' && result.user) {
-            this.setCurrentUser(result.user);
-            return { success: true, user: result.user };
+            const userWithToken: User = {
+              ...result.user,
+              sessionToken: result.token || generateClientSessionToken(result.user.id, result.user.role),
+            };
+            this.setCurrentUser(userWithToken);
+            return { success: true, user: userWithToken };
           } else if (result.status === 'error') {
             return { success: false, message: result.message || 'بيانات الدخول غير صحيحة' };
           }
@@ -274,15 +289,18 @@ class StorageService {
     const users = this.getUsers();
     
     // Default Admin First Login initialization if database is completely empty
-    if (users.length === 0 && (cleanUsername === 'admin' || cleanUsername === '001') && (cleanPassword === 'admin123' || cleanPassword === 'admin' || cleanPassword === '1234')) {
+    if (users.length === 0 && (cleanUsername === 'admin' || cleanUsername === '001') && (cleanPassword === 'admin123' || cleanPassword === 'admin')) {
       const defaultAdmin: User = {
         id: '001',
         username: 'admin',
+        password: inputHashed,
         fullName: 'مدير النظام',
         role: 'Admin',
         status: 'Active',
         department: 'الإدارة العامة والتوجيه',
         email: 'admin@ntss-schools.edu.eg',
+        mustChangePassword: true,
+        sessionToken: generateClientSessionToken('001', 'Admin'),
         createdAt: getCairoNowISO(),
         lastLogin: getCairoNowISO(),
       };
@@ -305,12 +323,24 @@ class StorageService {
       return { success: false, message: 'هذا الحساب معطل حالياً، يرجى مراجعة إدارة المدرسة' };
     }
 
-    // Check password if stored locally
-    if (found.password && found.password !== cleanPassword) {
-      return { success: false, message: 'كلمة المرور غير صحيحة' };
+    // Check password if stored locally (supports plain text migration or hashed match)
+    if (found.password) {
+      const isPlainMatch = (found.password === cleanPassword);
+      const isHashMatch = (found.password === inputHashed);
+      if (!isPlainMatch && !isHashMatch) {
+        return { success: false, message: 'كلمة المرور غير صحيحة' };
+      }
+      // Auto-migrate to hash if stored as plain text
+      if (isPlainMatch && !isHashMatch) {
+        found.password = inputHashed;
+      }
     }
 
+    const isDefaultAdmin = (cleanUsername === 'admin' && cleanPassword === 'admin123');
+    found.mustChangePassword = found.mustChangePassword || isDefaultAdmin;
+    found.sessionToken = generateClientSessionToken(found.id, found.role);
     found.lastLogin = getCairoNowISO();
+    
     this.saveUser(found);
     this.setCurrentUser(found);
     return { success: true, user: found };
@@ -712,7 +742,331 @@ class StorageService {
     return { added, updated, errors };
   }
 
-  // ---------------- Student Attendance ----------------
+  // ---------------- Attendance Day Workflow & Student School Attendance ----------------
+  public getAttendanceDays(academicYearId?: string): AttendanceDay[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.ATTENDANCE_DAYS);
+    if (!raw) return [];
+    try {
+      const parsed: AttendanceDay[] = JSON.parse(raw);
+      if (academicYearId) {
+        return parsed.filter(d => d.academicYearId === academicYearId);
+      }
+      return parsed;
+    } catch {
+      return [];
+    }
+  }
+
+  public getAttendanceDayByDate(date: string, academicYearId?: string): AttendanceDay | undefined {
+    const days = this.getAttendanceDays();
+    if (academicYearId) {
+      return days.find(d => d.date === date && d.academicYearId === academicYearId) || days.find(d => d.date === date);
+    }
+    return days.find(d => d.date === date);
+  }
+
+  public saveAttendanceDay(day: AttendanceDay): { success: boolean; message?: string } {
+    const list = this.getAttendanceDays();
+    const idx = list.findIndex(d => d.id === day.id || (d.date === day.date && d.academicYearId === day.academicYearId));
+    
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...day, version: (list[idx].version || 0) + 1 };
+    } else {
+      list.unshift({ ...day, id: day.id || `DAY-${day.date}`, version: 1 });
+    }
+
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE_DAYS, JSON.stringify(list));
+    this.notifyChange();
+    this.pushPost('saveAttendanceDay', day).catch(() => {});
+    return { success: true, message: 'تم حفظ سجل يوم الحضور بنجاح' };
+  }
+
+  public recalculateAttendanceDayCounts(date: string, academicYearId?: string): AttendanceDay {
+    const activeYear = academicYearId ? this.getAcademicYearById(academicYearId) : this.getActiveAcademicYear();
+    const yearId = activeYear?.id || 'AY_CURRENT';
+    const activeStudents = this.getStudents().filter(s => s.status === 'نشط');
+    const allAttendance = this.getStudentAttendance().filter(a => a.date === date);
+    const existingDay = this.getAttendanceDayByDate(date, yearId);
+
+    const recordMap = new Map<string, StudentAttendanceRecord>();
+    allAttendance.forEach(r => recordMap.set(r.studentId, r));
+
+    let presentCount = 0;
+    let lateCount = 0;
+    let absentCount = 0;
+    let excusedCount = 0;
+    let unrecordedCount = 0;
+
+    activeStudents.forEach(s => {
+      const rec = recordMap.get(s.id);
+      if (!rec || rec.status === 'لم يسجل' || !rec.status) {
+        unrecordedCount++;
+      } else if (rec.status === 'حاضر') {
+        presentCount++;
+      } else if (rec.status === 'متأخر') {
+        lateCount++;
+      } else if (rec.status === 'غائب بعذر') {
+        absentCount++;
+        excusedCount++;
+      } else if (rec.status === 'غائب' || rec.status === 'غائب بدون عذر' || rec.status === 'هروب') {
+        absentCount++;
+      } else {
+        presentCount++;
+      }
+    });
+
+    const recordedCount = activeStudents.length - unrecordedCount;
+
+    const dayRecord: AttendanceDay = {
+      id: existingDay?.id || `DAY-${date}-${yearId}`,
+      date,
+      academicYearId: yearId,
+      academicYearName: activeYear?.name || '2025/2026',
+      dayName: getEgyptianDayName(date),
+      status: existingDay?.status || 'Open',
+      totalStudentsCount: activeStudents.length,
+      recordedCount,
+      presentCount,
+      lateCount,
+      absentCount,
+      excusedCount,
+      unrecordedCount,
+      openedAt: existingDay?.openedAt || getCairoNowISO(),
+      openedBy: existingDay?.openedBy || this.getCurrentUser()?.fullName || 'النظام',
+      reviewedAt: existingDay?.reviewedAt,
+      reviewedBy: existingDay?.reviewedBy,
+      reviewNotes: existingDay?.reviewNotes,
+      approvedAt: existingDay?.approvedAt,
+      approvedBy: existingDay?.approvedBy,
+      lockedAt: existingDay?.lockedAt,
+      lockedBy: existingDay?.lockedBy,
+      lockNotes: existingDay?.lockNotes,
+      version: (existingDay?.version || 0) + 1,
+    };
+
+    this.saveAttendanceDay(dayRecord);
+    return dayRecord;
+  }
+
+  public openAttendanceDay(date: string, academicYearId?: string): { success: boolean; day: AttendanceDay; message?: string } {
+    const activeYear = academicYearId ? this.getAcademicYearById(academicYearId) : this.getActiveAcademicYear();
+    const yearId = activeYear?.id || 'AY_CURRENT';
+    const user = this.getCurrentUser();
+    const existing = this.getAttendanceDayByDate(date, yearId);
+
+    if (existing && existing.status === 'Locked') {
+      return { success: false, day: existing, message: 'اليوم مقفل ولا يمكن فتحه إلا من خلال صلاحية فك القفل الاستثنائية.' };
+    }
+
+    const day = this.recalculateAttendanceDayCounts(date, yearId);
+    day.status = 'Open';
+    day.openedAt = getCairoNowISO();
+    day.openedBy = user?.fullName || 'مدير النظام';
+    
+    this.saveAttendanceDay(day);
+    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `فتح يوم الحضور المدرسي بتاريخ (${date})`);
+    return { success: true, day, message: `تم فتح يوم الحضور (${date}) بنجاح` };
+  }
+
+  public reviewAttendanceDay(date: string, academicYearId?: string, reviewNotes?: string) {
+    const activeYear = academicYearId ? this.getAcademicYearById(academicYearId) : this.getActiveAcademicYear();
+    const yearId = activeYear?.id || 'AY_CURRENT';
+    const students = this.getStudents();
+    const enrollments = this.getStudentEnrollments();
+    const schoolAttendance = this.getStudentAttendance();
+    const classAttendance = this.getClassAttendance();
+    const settings = this.getSettings();
+    const statuses = settings.studentAttendanceStatuses || DEFAULT_STUDENT_ATTENDANCE_STATUSES;
+    const existingDay = this.getAttendanceDayByDate(date, yearId);
+
+    const review = computeAttendanceDayReview({
+      date,
+      academicYearId: yearId,
+      students,
+      enrollments,
+      schoolAttendance,
+      classAttendance,
+      dayRecord: existingDay,
+      settings,
+      statuses,
+    });
+
+    const user = this.getCurrentUser();
+    const day = this.recalculateAttendanceDayCounts(date, yearId);
+    day.status = 'UnderReview';
+    day.reviewedAt = getCairoNowISO();
+    day.reviewedBy = user?.fullName || 'مراجع الحضور';
+    day.reviewNotes = reviewNotes || existingDay?.reviewNotes;
+
+    this.saveAttendanceDay(day);
+
+    // Save generated exceptions if any
+    if (review.exceptions.length > 0) {
+      this.batchSaveAttendanceExceptions(review.exceptions);
+    }
+
+    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `مراجعة يوم الحضور المدرسي (${date}): مسجل ${review.recordedCount}/${review.totalActiveStudents} (${review.warnings.length} تنبيهات)`);
+    return { success: true, day, review, message: 'تمت مراجعة يوم الحضور وفحص كافة الاستثناءات والتطابق' };
+  }
+
+  public approveAttendanceDay(
+    date: string,
+    academicYearId?: string,
+    policy: 'block' | 'convertToAbsent' | 'allowNotRecorded' = 'block'
+  ): { success: boolean; day: AttendanceDay; message?: string; errors?: string[] } {
+    const activeYear = academicYearId ? this.getAcademicYearById(academicYearId) : this.getActiveAcademicYear();
+    const yearId = activeYear?.id || 'AY_CURRENT';
+    const day = this.recalculateAttendanceDayCounts(date, yearId);
+    const user = this.getCurrentUser();
+
+    if (day.unrecordedCount > 0) {
+      if (policy === 'block') {
+        return {
+          success: false,
+          day,
+          errors: [`لا يمكن اعتماد اليوم لوجود (${day.unrecordedCount}) طالب لم يتم رصد حضورهم بعد.`],
+          message: 'يجب رصد جميع الطلاب أو اختيار تحويل غير المسجلين إلى غياب.',
+        };
+      } else if (policy === 'convertToAbsent') {
+        // Convert unrecorded students to absent
+        const activeStudents = this.getStudents().filter(s => s.status === 'نشط');
+        const dayAttendance = this.getStudentAttendance().filter(a => a.date === date);
+        const recordedIds = new Set(dayAttendance.map(a => a.studentId));
+        const unrecordedList = activeStudents.filter(s => !recordedIds.has(s.id));
+
+        const autoAbsentRecords: StudentAttendanceRecord[] = unrecordedList.map(s => ({
+          id: `ATT-STD-${s.id}-${date}`,
+          studentId: s.id,
+          studentCode: s.studentCode,
+          studentName: s.name,
+          academicYearId: yearId,
+          stage: s.stage || 'المرحلة الثانوية',
+          grade: s.grade,
+          classroom: s.classroom,
+          date,
+          dayName: getEgyptianDayName(date),
+          status: 'غائب بدون عذر',
+          notes: 'تم تحويله لغائب تلقائياً عند اعتماد اليوم',
+          recordedBy: `النظام (${user?.fullName || 'الاعتماد'})`,
+          recordedAt: getCairoNowISO(),
+        }));
+
+        this.bulkSaveStudentAttendance(autoAbsentRecords);
+        this.recalculateAttendanceDayCounts(date, yearId);
+      }
+    }
+
+    day.status = 'Approved';
+    day.approvedAt = getCairoNowISO();
+    day.approvedBy = user?.fullName || 'وكيل شؤون الطلاب';
+
+    this.saveAttendanceDay(day);
+    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `اعتماد حضور يوم (${date}) رسمياً لـ (${day.totalStudentsCount}) طالب`);
+    return { success: true, day, message: `تم اعتماد حضور يوم (${date}) بنجاح وجاهز للقفل النهائي` };
+  }
+
+  public lockAttendanceDay(date: string, academicYearId?: string, lockNotes?: string): { success: boolean; day: AttendanceDay; message?: string } {
+    const activeYear = academicYearId ? this.getAcademicYearById(academicYearId) : this.getActiveAcademicYear();
+    const yearId = activeYear?.id || 'AY_CURRENT';
+    const day = this.recalculateAttendanceDayCounts(date, yearId);
+    const user = this.getCurrentUser();
+
+    day.status = 'Locked';
+    day.lockedAt = getCairoNowISO();
+    day.lockedBy = user?.fullName || 'مدير المدرسة';
+    day.lockNotes = lockNotes;
+
+    this.saveAttendanceDay(day);
+    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `قفل يوم الحضور المدرسي (${date}) نهائياً لمنع التعديل: ${lockNotes || 'قفل نهائي'}`);
+    return { success: true, day, message: `تم قفل يوم الحضور (${date}) نهائياً وتأمين السجلات` };
+  }
+
+  public unlockAttendanceDay(date: string, academicYearId?: string, overrideReason = 'فك قفل استثنائي بتصريح إدارة المدرسة'): { success: boolean; day: AttendanceDay; message?: string } {
+    const activeYear = academicYearId ? this.getAcademicYearById(academicYearId) : this.getActiveAcademicYear();
+    const yearId = activeYear?.id || 'AY_CURRENT';
+    const day = this.recalculateAttendanceDayCounts(date, yearId);
+    const user = this.getCurrentUser();
+
+    day.status = 'Open';
+    day.lockedAt = undefined;
+    day.lockedBy = undefined;
+    day.lockNotes = `تم فك القفل بتاريخ ${getCairoNowISO()}: ${overrideReason}`;
+
+    this.saveAttendanceDay(day);
+    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `فك قفل يوم الحضور المدرسي (${date}) استثنائياً: ${overrideReason}`);
+    return { success: true, day, message: `تم فك قفل يوم (${date}) بنجاح وأصبح متاحاً للتعديل` };
+  }
+
+  public overrideLockedAttendance(params: {
+    studentId: string;
+    date: string;
+    updates: Partial<StudentAttendanceRecord>;
+    reason: string;
+  }): { success: boolean; record?: StudentAttendanceRecord; message?: string } {
+    const { studentId, date, updates, reason } = params;
+    if (!reason || reason.trim().length < 5) {
+      return { success: false, message: 'يجب كتابة سبب واضح ومفصل للتعديل الاستثنائي على السجل المقفل.' };
+    }
+
+    const list = this.getStudentAttendance();
+    const idx = list.findIndex(r => r.studentId === studentId && r.date === date);
+    const user = this.getCurrentUser();
+    const now = getCairoNowISO();
+
+    let oldRecord: StudentAttendanceRecord | undefined;
+    let updated: StudentAttendanceRecord;
+
+    if (idx >= 0) {
+      oldRecord = { ...list[idx] };
+      updated = {
+        ...list[idx],
+        ...updates,
+        notes: `${list[idx].notes || ''} [تعديل استثنائي: ${reason}]`,
+        updatedBy: user?.fullName || 'مدير النظام',
+        updatedAt: now,
+        version: (list[idx].version || 0) + 1,
+      };
+      list[idx] = updated;
+    } else {
+      const student = this.getStudentById(studentId);
+      updated = {
+        id: `ATT-STD-${studentId}-${date}`,
+        studentId,
+        studentName: student?.name || studentId,
+        studentCode: student?.studentCode,
+        stage: student?.stage || 'المرحلة الثانوية',
+        grade: student?.grade || '',
+        classroom: student?.classroom || '',
+        date,
+        dayName: getEgyptianDayName(date),
+        status: updates.status || 'حاضر',
+        ...updates,
+        notes: `[تعديل استثنائي: ${reason}]`,
+        recordedBy: user?.fullName || 'مدير النظام',
+        recordedAt: now,
+        version: 1,
+      };
+      list.unshift(updated);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(list));
+    this.recalculateAttendanceDayCounts(date);
+
+    this.logAudit(
+      'UPDATE',
+      'STUDENT_ATTENDANCE',
+      `تعديل استثنائي لسجل حضور مقفل: للطالب (${updated.studentName}) بتاريخ (${date}) - السبب: ${reason}`,
+      JSON.stringify(oldRecord || {}),
+      JSON.stringify(updated),
+      studentId
+    );
+
+    this.notifyChange();
+    this.pushPost('overrideAttendanceRecord', { studentId, date, updates, reason }).catch(() => {});
+    return { success: true, record: updated, message: 'تم تطبيق التعديل الاستثنائي وتوثيقه في سجل الرقابة والمراجعة.' };
+  }
+
+  // ---------------- Student School Attendance ----------------
   public getStudentAttendance(): StudentAttendanceRecord[] {
     const raw = localStorage.getItem(STORAGE_KEYS.STUDENT_ATTENDANCE);
     if (!raw) return [];
@@ -723,18 +1077,37 @@ class StorageService {
     }
   }
 
-  public saveStudentAttendanceRecord(rec: StudentAttendanceRecord): void {
+  public saveStudentAttendanceRecord(rec: StudentAttendanceRecord): { success: boolean; message?: string; dayLocked?: boolean } {
+    const day = this.getAttendanceDayByDate(rec.date);
+    if (day && day.status === 'Locked') {
+      return {
+        success: false,
+        dayLocked: true,
+        message: 'اليوم مقفل ولا يمكن التعديل عليه بدون إجراء التعديل الاستثنائي مع توثيق السبب.',
+      };
+    }
+
     const list = this.getStudentAttendance();
     const idx = list.findIndex(r => r.studentId === rec.studentId && r.date === rec.date);
     const now = getCairoNowISO();
     const user = this.getCurrentUser();
+    const settings = this.getSettings();
+
+    // Auto calculate late minutes if checkInTime provided
+    let calculatedLateMinutes = rec.lateMinutes;
+    if (rec.checkInTime && settings.studentAttendanceRules) {
+      const lateCalc = calculateStudentLateMinutes(rec.checkInTime, settings.studentAttendanceRules);
+      calculatedLateMinutes = lateCalc.lateMinutes;
+    }
 
     const prepared: StudentAttendanceRecord = {
       ...rec,
       id: rec.id || `ATT-STD-${rec.studentId}-${rec.date}`,
-      recordedBy: rec.recordedBy || user?.fullName || 'النظام',
+      lateMinutes: calculatedLateMinutes,
+      recordedBy: rec.recordedBy || user?.fullName || 'شؤون الطلاب',
       recordedAt: rec.recordedAt || now,
       updatedAt: now,
+      version: (rec.version || 0) + 1,
     };
 
     if (idx >= 0) {
@@ -744,25 +1117,53 @@ class StorageService {
     }
 
     localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(list));
+    this.recalculateAttendanceDayCounts(rec.date);
     this.notifyChange();
     this.pushPost('saveStudentAttendance', prepared).catch(() => {});
+    return { success: true, message: 'تم حفظ سجل حضور الطالب بنجاح' };
   }
 
   public bulkSaveStudentAttendance(records: StudentAttendanceRecord[]): void {
+    this.saveStudentSchoolAttendanceBatch(records);
+  }
+
+  public saveStudentSchoolAttendanceBatch(records: StudentAttendanceRecord[]): { success: boolean; count: number; dayLocked?: boolean; message?: string } {
+    if (records.length === 0) return { success: true, count: 0 };
+
+    const firstDate = records[0].date;
+    const day = this.getAttendanceDayByDate(firstDate);
+    if (day && day.status === 'Locked') {
+      return {
+        success: false,
+        count: 0,
+        dayLocked: true,
+        message: 'اليوم مقفل نهائياً. لا يمكن حفظ التعديلات الجماعية على يوم مقفل.',
+      };
+    }
+
     const list = this.getStudentAttendance();
     const map = new Map<string, number>();
     list.forEach((r, i) => map.set(`${r.studentId}_${r.date}`, i));
     const now = getCairoNowISO();
     const user = this.getCurrentUser();
+    const settings = this.getSettings();
 
     records.forEach(rec => {
       const key = `${rec.studentId}_${rec.date}`;
+      let calculatedLateMinutes = rec.lateMinutes;
+      if (rec.checkInTime && settings.studentAttendanceRules) {
+        const lateCalc = calculateStudentLateMinutes(rec.checkInTime, settings.studentAttendanceRules);
+        calculatedLateMinutes = lateCalc.lateMinutes;
+      }
+
       const prepared: StudentAttendanceRecord = {
         ...rec,
         id: rec.id || `ATT-STD-${rec.studentId}-${rec.date}`,
-        recordedBy: rec.recordedBy || user?.fullName || 'النظام',
+        lateMinutes: calculatedLateMinutes,
+        recordedBy: rec.recordedBy || user?.fullName || 'شؤون الطلاب',
         recordedAt: rec.recordedAt || now,
         updatedAt: now,
+        version: (rec.version || 0) + 1,
       };
 
       if (map.has(key)) {
@@ -775,9 +1176,72 @@ class StorageService {
     });
 
     localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(list));
-    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `رصد حضور جماعي لعدد (${records.length}) طالب`);
+    this.recalculateAttendanceDayCounts(firstDate);
+    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `رصد حضور جماعي للمدرسة لعدد (${records.length}) طالب بتاريخ (${firstDate})`);
     this.notifyChange();
-    this.pushPost('bulkSaveStudentAttendance', records).catch(() => {});
+    this.pushPost('saveStudentSchoolAttendanceBatch', records).catch(() => {});
+    return { success: true, count: records.length, message: `تم رصد حضور (${records.length}) طالب بنجاح` };
+  }
+
+  // ---------------- Attendance Exceptions ----------------
+  public getAttendanceExceptions(filters?: {
+    date?: string;
+    status?: 'OPEN' | 'RESOLVED' | 'DISMISSED';
+    studentId?: string;
+  }): AttendanceException[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.ATTENDANCE_EXCEPTIONS);
+    if (!raw) return [];
+    try {
+      const parsed: AttendanceException[] = JSON.parse(raw);
+      if (!filters) return parsed;
+      return parsed.filter(e => {
+        if (filters.date && e.date !== filters.date) return false;
+        if (filters.status && e.status !== filters.status) return false;
+        if (filters.studentId && e.studentId !== filters.studentId) return false;
+        return true;
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  public batchSaveAttendanceExceptions(exceptions: AttendanceException[]): void {
+    const list = this.getAttendanceExceptions();
+    const map = new Map<string, number>();
+    list.forEach((e, i) => map.set(e.id, i));
+
+    exceptions.forEach(exc => {
+      if (map.has(exc.id)) {
+        list[map.get(exc.id)!] = { ...list[map.get(exc.id)!], ...exc };
+      } else {
+        list.unshift(exc);
+        map.set(exc.id, 0);
+      }
+    });
+
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE_EXCEPTIONS, JSON.stringify(list));
+    this.notifyChange();
+  }
+
+  public resolveAttendanceException(
+    exceptionId: string,
+    resolution: string,
+    status: 'RESOLVED' | 'DISMISSED' = 'RESOLVED'
+  ): { success: boolean; message?: string } {
+    const list = this.getAttendanceExceptions();
+    const target = list.find(e => e.id === exceptionId);
+    if (!target) return { success: false, message: 'الاستثناء غير موجود' };
+
+    const user = this.getCurrentUser();
+    target.status = status;
+    target.resolution = resolution;
+    target.resolvedBy = user?.fullName || 'مشرف الحضور';
+    target.resolvedAt = getCairoNowISO();
+
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE_EXCEPTIONS, JSON.stringify(list));
+    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `معالجة استثناء الحضور (${target.studentName}): ${resolution}`);
+    this.notifyChange();
+    return { success: true, message: 'تمت تسوية استثناء الحضور بنجاح' };
   }
 
   // ---------------- Behavior & Violations ----------------
@@ -889,6 +1353,190 @@ class StorageService {
       statusText,
       statusColor,
     };
+  }
+
+  // ---------------- Class-by-Class Attendance (Period Attendance) ----------------
+  public getClassAttendance(filters?: {
+    date?: string;
+    studentId?: string;
+    grade?: string;
+    classroom?: string;
+    periodNumber?: number;
+    teacherId?: string;
+  }): ClassAttendanceRecord[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.CLASS_ATTENDANCE);
+    if (!raw) return [];
+    try {
+      const parsed: ClassAttendanceRecord[] = JSON.parse(raw);
+      if (!filters) return parsed;
+      return parsed.filter(c => {
+        if (filters.date && c.date !== filters.date) return false;
+        if (filters.studentId && c.studentId !== filters.studentId) return false;
+        if (filters.grade && c.grade !== filters.grade) return false;
+        if (filters.classroom && c.classroom !== filters.classroom) return false;
+        if (filters.periodNumber !== undefined && c.periodNumber !== filters.periodNumber) return false;
+        if (filters.teacherId && c.teacherId !== filters.teacherId) return false;
+        return true;
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  public saveClassAttendanceRecord(rec: ClassAttendanceRecord): { success: boolean; message?: string } {
+    const list = this.getClassAttendance();
+    const idx = list.findIndex(
+      r => r.studentId === rec.studentId && r.date === rec.date && r.periodNumber === rec.periodNumber
+    );
+    const now = getCairoNowISO();
+    const user = this.getCurrentUser();
+
+    const prepared: ClassAttendanceRecord = {
+      ...rec,
+      id: rec.id || `ATT-CLS-${rec.studentId}-${rec.date}-P${rec.periodNumber}`,
+      teacherName: rec.teacherName || user?.fullName || 'المعلم',
+      recordedAt: rec.recordedAt || now,
+      updatedAt: now,
+    };
+
+    if (idx >= 0) {
+      list[idx] = prepared;
+    } else {
+      list.unshift(prepared);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.CLASS_ATTENDANCE, JSON.stringify(list));
+    this.notifyChange();
+    this.pushPost('saveClassAttendance', prepared).catch(() => {});
+    return { success: true, message: 'تم حفظ حضور الحصة بنجاح' };
+  }
+
+  public saveClassAttendanceBatch(records: ClassAttendanceRecord[]): {
+    success: boolean;
+    count: number;
+    exceptionsGenerated: number;
+    message?: string;
+  } {
+    if (records.length === 0) return { success: true, count: 0, exceptionsGenerated: 0 };
+
+    const list = this.getClassAttendance();
+    const map = new Map<string, number>();
+    list.forEach((r, i) => map.set(`${r.studentId}_${r.date}_${r.periodNumber}`, i));
+    const now = getCairoNowISO();
+    const user = this.getCurrentUser();
+    const date = records[0].date;
+
+    // For cross-reference mismatch checking
+    const schoolAttendance = this.getStudentAttendance().filter(a => a.date === date);
+    const schoolMap = new Map<string, StudentAttendanceRecord>();
+    schoolAttendance.forEach(s => schoolMap.set(s.studentId, s));
+
+    const generatedExceptions: AttendanceException[] = [];
+
+    records.forEach(rec => {
+      const key = `${rec.studentId}_${rec.date}_${rec.periodNumber}`;
+      const prepared: ClassAttendanceRecord = {
+        ...rec,
+        id: rec.id || `ATT-CLS-${rec.studentId}-${rec.date}-P${rec.periodNumber}`,
+        teacherName: rec.teacherName || user?.fullName || 'المعلم',
+        recordedAt: rec.recordedAt || now,
+        updatedAt: now,
+      };
+
+      if (map.has(key)) {
+        const idx = map.get(key)!;
+        list[idx] = prepared;
+      } else {
+        list.push(prepared);
+        map.set(key, list.length - 1);
+      }
+
+      // Check Mismatches with School Attendance
+      const schoolRec = schoolMap.get(rec.studentId);
+      if (schoolRec) {
+        const isSchoolAbsent = schoolRec.status === 'غائب' || schoolRec.status === 'غائب بدون عذر' || schoolRec.status === 'غائب بعذر';
+        const isClassPresent = rec.status === 'حاضر' || rec.status === 'متأخر';
+
+        if (isSchoolAbsent && isClassPresent) {
+          generatedExceptions.push({
+            id: `EXC-ABS-PRS-${rec.studentId}-${rec.date}-P${rec.periodNumber}`,
+            studentId: rec.studentId,
+            studentName: rec.studentName,
+            studentCode: rec.studentCode,
+            grade: rec.grade,
+            classroom: rec.classroom,
+            date: rec.date,
+            periodNumber: rec.periodNumber,
+            type: 'SCHOOL_ABSENT_CLASS_PRESENT',
+            severity: 'CRITICAL',
+            description: `الطالب مسجل غائب في الحضور المدرسي العام، ولكنه رُصد ${rec.status} في حصة ${rec.subjectName || ''} (حصة ${rec.periodNumber}).`,
+            schoolStatus: schoolRec.status,
+            classStatus: rec.status,
+            status: 'OPEN',
+            createdAt: now,
+          });
+        }
+
+        const isSchoolPresent = schoolRec.status === 'حاضر' || schoolRec.status === 'متأخر';
+        const isClassAbsent = rec.status === 'غائب' || rec.status === 'هروب';
+
+        if (isSchoolPresent && isClassAbsent) {
+          generatedExceptions.push({
+            id: `EXC-PRS-ABS-${rec.studentId}-${rec.date}-P${rec.periodNumber}`,
+            studentId: rec.studentId,
+            studentName: rec.studentName,
+            studentCode: rec.studentCode,
+            grade: rec.grade,
+            classroom: rec.classroom,
+            date: rec.date,
+            periodNumber: rec.periodNumber,
+            type: rec.status === 'هروب' ? 'CLASS_TRUANCY' : 'SCHOOL_PRESENT_CLASS_ABSENT',
+            severity: rec.status === 'هروب' ? 'CRITICAL' : 'WARNING',
+            description: rec.status === 'هروب'
+              ? `اشتباه هروب: الطالب حاضر في المدرسة لكنه هرَب من حصة ${rec.subjectName || ''} (حصة ${rec.periodNumber}).`
+              : `الطالب حاضر بالمدرسة ولكنه لم يحضر حصة ${rec.subjectName || ''} (حصة ${rec.periodNumber}).`,
+            schoolStatus: schoolRec.status,
+            classStatus: rec.status,
+            status: 'OPEN',
+            createdAt: now,
+          });
+        }
+      }
+    });
+
+    localStorage.setItem(STORAGE_KEYS.CLASS_ATTENDANCE, JSON.stringify(list));
+
+    if (generatedExceptions.length > 0) {
+      this.batchSaveAttendanceExceptions(generatedExceptions);
+    }
+
+    this.logAudit(
+      'UPDATE',
+      'CLASS_ATTENDANCE',
+      `رصد حضور جماعي للحصة: (${records.length}) طالب - مادة ${records[0]?.subjectName || ''} - فصل (${records[0]?.grade} ${records[0]?.classroom}) - تم رصد (${generatedExceptions.length}) استثناء`
+    );
+
+    this.notifyChange();
+    this.pushPost('saveClassAttendanceBatch', records).catch(() => {});
+    return {
+      success: true,
+      count: records.length,
+      exceptionsGenerated: generatedExceptions.length,
+      message: `تم رصد حضور الحصة لـ (${records.length}) طالب بنجاح`,
+    };
+  }
+
+  // ---------------- Schedule Periods & Config ----------------
+  public getSchedulePeriods(): SchedulePeriodItem[] {
+    const settings = this.getSettings();
+    return settings.scheduleConfig?.periods || DEFAULT_SCHEDULE_CONFIG.periods;
+  }
+
+  public saveSchedulePeriods(periods: SchedulePeriodItem[]): void {
+    const settings = this.getSettings();
+    const scheduleConfig = settings.scheduleConfig || { ...DEFAULT_SCHEDULE_CONFIG };
+    scheduleConfig.periods = periods;
+    this.saveSettings({ scheduleConfig }, `تحديث توقيتات وتفاصيل الحصص الدراسية (${periods.length} حصة)`);
   }
 
   // ---------------- Schedule & Lesson Content ----------------
@@ -1176,26 +1824,21 @@ class StorageService {
 
   public bulkMarkAttendance(empIds: string[], date: string, status: AttendanceStatus): { success: boolean; count: number } {
     const employees = this.getEmployees();
+    const settings = this.getSettings();
     const newRecords: AttendanceRecord[] = [];
 
     empIds.forEach(id => {
       const emp = employees.find(e => e.id === id);
       if (emp) {
-        newRecords.push({
-          id: `ATT-${emp.id}-${date}`,
-          employeeId: emp.id,
-          employeeName: emp.name,
-          department: emp.department,
-          date,
-          dayName: getEgyptianDayName(date),
-          checkIn: status === 'حاضر' ? (emp.workStartTime || '07:30') : '',
-          checkOut: '',
-          workingHours: status === 'حاضر' ? (emp.workingHours || 8) : 0,
-          lateMinutes: 0,
-          earlyLeaveMinutes: 0,
-          overtimeHours: 0,
-          status,
+        const checkIn = status === 'حاضر' ? (emp.workStartTime || settings.officialStartTime || '07:30') : '';
+        const rec = buildUnifiedAttendanceRecord({
+          employee: emp,
+          dateStr: date,
+          checkIn,
+          settings,
+          statusOverride: status === 'حاضر' ? undefined : status,
         });
+        newRecords.push(rec);
       }
     });
 
@@ -1207,90 +1850,90 @@ class StorageService {
     const emp = this.getEmployees().find(e => e.id === employeeId);
     const nowTime = checkInTime || getCairoCurrentTime();
     const settings = this.getSettings();
-    const startTime = emp?.workStartTime || settings.officialStartTime || '07:30';
 
-    const [startH, startM] = startTime.split(':').map(Number);
-    const [inH, inM] = nowTime.split(':').map(Number);
-    const diffMinutes = (inH * 60 + inM) - (startH * 60 + startM);
-    const lateMinutes = Math.max(0, diffMinutes - (settings.gracePeriodMinutes || 15));
-    const status: AttendanceStatus = statusOverride || (lateMinutes > 0 ? 'متأخر' : 'حاضر');
-
-    const record: AttendanceRecord = {
-      id: `ATT-${employeeId}-${date}`,
-      employeeId,
-      employeeName: emp?.name || '',
-      department: emp?.department || '',
-      date,
-      dayName: getEgyptianDayName(date),
+    const record = buildUnifiedAttendanceRecord({
+      employee: emp,
+      dateStr: date,
       checkIn: nowTime,
-      checkOut: '',
-      workingHours: emp?.workingHours || 8,
-      lateMinutes: status === 'متأخر' ? Math.max(15, lateMinutes) : 0,
-      earlyLeaveMinutes: 0,
-      overtimeHours: 0,
-      status,
-      checkInTimestamp: getCairoNowISO(),
-    };
+      settings,
+      statusOverride,
+    });
 
     this.saveAttendanceRecord(record);
     return { success: true, record };
   }
 
-  public quickCheckOut(employeeId: string, date: string, checkOutTime?: string): { success: boolean; record: AttendanceRecord } {
+  public quickCheckOut(employeeId: string, date: string, checkOutTime?: string, allowMissingCheckIn: boolean = false): { success: boolean; record?: AttendanceRecord; message?: string } {
     const list = this.getAttendance();
     const existing = list.find(a => a.employeeId === employeeId && a.date === date);
     const emp = this.getEmployees().find(e => e.id === employeeId);
     const nowTime = checkOutTime || getCairoCurrentTime();
+    const settings = this.getSettings();
 
-    const record: AttendanceRecord = existing ? {
-      ...existing,
-      checkOut: nowTime,
-      checkOutTimestamp: getCairoNowISO(),
-    } : {
-      id: `ATT-${employeeId}-${date}`,
-      employeeId,
-      employeeName: emp?.name || '',
-      department: emp?.department || '',
-      date,
-      dayName: getEgyptianDayName(date),
-      checkIn: emp?.workStartTime || '07:30',
-      checkOut: nowTime,
-      workingHours: emp?.workingHours || 8,
-      lateMinutes: 0,
-      earlyLeaveMinutes: 0,
-      overtimeHours: 0,
-      status: 'حاضر',
-      checkOutTimestamp: getCairoNowISO(),
-    };
+    if (!existing || !existing.checkIn) {
+      if (!allowMissingCheckIn) {
+        return {
+          success: false,
+          message: `الموظف (${emp?.name || employeeId}) ليس لديه تسجيل حضور مسبق لهذا اليوم. لا يمكن تسجيل الانصراف بدون حضور.`
+        };
+      }
+      const checkInFallback = emp?.workStartTime || settings.officialStartTime || '07:30';
+      const record = buildUnifiedAttendanceRecord({
+        employee: emp,
+        dateStr: date,
+        checkIn: checkInFallback,
+        checkOut: nowTime,
+        settings,
+        statusOverride: 'حاضر',
+      });
+      record.notes = (record.notes ? record.notes + ' | ' : '') + 'تسجيل انصراف مع اعتماد حضور تلقائي بطلب المستخدم';
+      this.saveAttendanceRecord(record);
+      return { success: true, record };
+    }
 
-    this.saveAttendanceRecord(record);
-    return { success: true, record };
+    const updated = buildUnifiedAttendanceRecord({
+      employee: emp,
+      dateStr: date,
+      checkIn: existing.checkIn,
+      checkOut: nowTime,
+      settings,
+      statusOverride: existing.status,
+    });
+    if (existing.notes) updated.notes = existing.notes;
+    if (existing.checkInTimestamp) updated.checkInTimestamp = existing.checkInTimestamp;
+
+    this.saveAttendanceRecord(updated);
+    return { success: true, record: updated };
   }
 
-  public bulkCheckOut(empIds: string[], date: string): { success: boolean; count: number } {
+  public bulkCheckOut(empIds: string[], date: string, checkOutTime?: string): { success: boolean; count: number; skippedCount: number } {
+    const list = this.getAttendance();
+    let successCount = 0;
+    let skippedCount = 0;
+
     empIds.forEach(id => {
-      this.quickCheckOut(id, date);
+      const existing = list.find(a => a.employeeId === id && a.date === date);
+      if (existing && existing.checkIn) {
+        const res = this.quickCheckOut(id, date, checkOutTime, false);
+        if (res.success) successCount++;
+      } else {
+        skippedCount++;
+      }
     });
-    return { success: true, count: empIds.length };
+
+    return { success: true, count: successCount, skippedCount };
   }
 
   public quickMarkDayOff(employeeId: string, date: string, statusText: string = 'عطلة أسبوعية'): void {
     const emp = this.getEmployees().find(e => e.id === employeeId);
-    this.saveAttendanceRecord({
-      id: `ATT-${employeeId}-${date}`,
-      employeeId,
-      employeeName: emp?.name || '',
-      department: emp?.department || '',
-      date,
-      dayName: getEgyptianDayName(date),
-      checkIn: '',
-      checkOut: '',
-      workingHours: 0,
-      lateMinutes: 0,
-      earlyLeaveMinutes: 0,
-      overtimeHours: 0,
-      status: statusText as any,
+    const settings = this.getSettings();
+    const rec = buildUnifiedAttendanceRecord({
+      employee: emp,
+      dateStr: date,
+      settings,
+      statusOverride: statusText as AttendanceStatus,
     });
+    this.saveAttendanceRecord(rec);
   }
 
   public quickMarkAbsent(employeeId: string, date: string, category?: string, reason?: string): void {
@@ -1396,12 +2039,23 @@ class StorageService {
     const list = this.getUsers();
     const idx = list.findIndex(u => u.id === user.id || u.username.toLowerCase() === user.username.toLowerCase());
     if (idx >= 0) {
-      list[idx] = { ...list[idx], ...user };
+      const existing = list[idx];
+      const passwordToSave = (user.password && user.password.trim().length > 0)
+        ? user.password.trim()
+        : existing.password;
+
+      list[idx] = {
+        ...existing,
+        ...user,
+        password: passwordToSave,
+      };
       this.logAudit('UPDATE', 'USER', `تعديل بيانات المستخدم: ${user.fullName} (@${user.username})`);
     } else {
-      const newUser = {
+      const newUser: User = {
         ...user,
         id: user.id || `USR-${Date.now().toString().slice(-4)}`,
+        password: user.password && user.password.trim() ? user.password.trim() : '123456',
+        mustChangePassword: user.mustChangePassword !== undefined ? user.mustChangePassword : true,
         createdAt: user.createdAt || getCairoNowISO(),
       };
       list.push(newUser);
@@ -1995,66 +2649,9 @@ class StorageService {
     return { success: true, rollbackedCount: count };
   }
 
-  // ---------------- Class-by-Class Attendance (Period Session Attendance) ----------------
-  public getClassAttendance(filters?: {
-    date?: string;
-    periodNumber?: number;
-    subject?: string;
-    grade?: string;
-    classroom?: string;
-    teacherId?: string;
-  }): ClassAttendanceRecord[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.CLASS_ATTENDANCE);
-    if (!raw) return [];
-    try {
-      const parsed: ClassAttendanceRecord[] = JSON.parse(raw);
-      if (!filters) return parsed;
-      return parsed.filter(r => {
-        if (filters.date && r.date !== filters.date) return false;
-        if (filters.periodNumber !== undefined && r.periodNumber !== filters.periodNumber) return false;
-        if (filters.subject && r.subject !== filters.subject) return false;
-        if (filters.grade && r.grade !== filters.grade) return false;
-        if (filters.classroom && r.classroom !== filters.classroom) return false;
-        if (filters.teacherId && r.teacherId !== filters.teacherId) return false;
-        return true;
-      });
-    } catch {
-      return [];
-    }
-  }
-
   public saveClassAttendance(records: ClassAttendanceRecord[]): { success: boolean; message?: string } {
-    const list = this.getClassAttendance();
-    const map = new Map<string, number>();
-    list.forEach((r, i) => map.set(`${r.studentId}_${r.date}_${r.periodNumber}`, i));
-    const now = getCairoNowISO();
-    const user = this.getCurrentUser();
-
-    records.forEach(rec => {
-      const key = `${rec.studentId}_${rec.date}_${rec.periodNumber}`;
-      const prepared: ClassAttendanceRecord = {
-        ...rec,
-        id: rec.id || `CATT-${rec.studentId}-${rec.date}-P${rec.periodNumber}`,
-        takenBy: rec.takenBy || user?.fullName || 'المعلم',
-        takenAt: rec.takenAt || now,
-        createdAt: rec.createdAt || now,
-        updatedAt: now,
-      };
-
-      if (map.has(key)) {
-        const idx = map.get(key)!;
-        list[idx] = prepared;
-      } else {
-        list.push(prepared);
-        map.set(key, list.length - 1);
-      }
-    });
-
-    localStorage.setItem(STORAGE_KEYS.CLASS_ATTENDANCE, JSON.stringify(list));
-    this.logAudit('UPDATE', 'STUDENT_ATTENDANCE', `رصد حضور الحصة الدراسية لعدد (${records.length}) طالب`);
-    this.notifyChange();
-    this.pushPost('saveClassAttendance', records).catch(() => {});
-    return { success: true, message: 'تم حفظ حضور الحصة الدراسية بنجاح' };
+    const res = this.saveClassAttendanceBatch(records);
+    return { success: res.success, message: res.message };
   }
 
   // ---------------- Positive Behavior Types & Ledger ----------------
@@ -2557,19 +3154,59 @@ class StorageService {
     return { success: true, message: 'تم تسجيل سجل التواصل مع ولي الأمر بنجاح' };
   }
 
-  private async pushPost(action: string, data: any): Promise<void> {
-    const settings = this.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
-    if (!scriptUrl || scriptUrl.length < 15 || !navigator.onLine) return;
+  public getSyncQueueSummary() {
+    return SyncQueueService.getQueueSummary();
+  }
 
-    try {
-      await fetch(scriptUrl, {
+  public async retrySyncQueue(): Promise<{ processed: number; succeeded: number; failed: number }> {
+    SyncQueueService.retryFailed();
+    return this.processSyncQueue();
+  }
+
+  public async processSyncQueue(): Promise<{ processed: number; succeeded: number; failed: number }> {
+    return SyncQueueService.processQueue(async (action, payload) => {
+      const settings = this.getSettings();
+      const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+      if (!scriptUrl || scriptUrl.length < 15) {
+        return { success: false, message: 'Google Apps Script URL not configured' };
+      }
+      const currentUser = this.getCurrentUser();
+
+      const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action, data }),
+        body: JSON.stringify({
+          action,
+          data: payload,
+          userRole: currentUser?.role || '',
+          userId: currentUser?.id || '',
+          sessionToken: currentUser?.sessionToken || '',
+        }),
       });
-    } catch (e) {
-      console.warn(`Background push for action "${action}" failed:`, e);
+
+      if (!response.ok) {
+        return { success: false, message: `HTTP Error: ${response.status}` };
+      }
+
+      const res = await response.json();
+      return {
+        success: res.status === 'success',
+        message: res.message || (res.status === 'success' ? 'Synced' : 'Failed to sync')
+      };
+    });
+  }
+
+  private async pushPost(action: string, data: any): Promise<void> {
+    // 1. Enqueue mutation
+    SyncQueueService.enqueue(action, action.replace('save', '').toLowerCase(), data);
+
+    // 2. Trigger asynchronous queue processing if online
+    if (navigator.onLine) {
+      setTimeout(() => {
+        this.processSyncQueue().then(() => {
+          this.notifyChange();
+        }).catch(() => {});
+      }, 50);
     }
   }
 }

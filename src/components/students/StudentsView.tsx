@@ -14,14 +14,20 @@ import {
   UserCheck,
   UserX,
   Users,
+  ArrowRightLeft,
+  CheckCircle,
+  Archive,
+  Phone,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Student } from '../../types';
+import { Student, StudentEnrollment, StudentTransferHistory } from '../../types';
 import { storageService } from '../../services/storageService';
 import { ImportWizardModal } from '../import/ImportWizardModal';
 import { StudentProfileModal } from './StudentProfileModal';
 import { StudentPromotionWizard } from './StudentPromotionWizard';
-import { formatEgyptianDate } from '../../utils/egyptianTime';
+import { formatEgyptianDate, getCairoNowISO } from '../../utils/egyptianTime';
 
 export const StudentsView: React.FC = () => {
   const [students, setStudents] = useState<Student[]>(() => storageService.getStudents());
@@ -39,6 +45,15 @@ export const StudentsView: React.FC = () => {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
 
+  // Quick Transfer Modal
+  const [transferModalStudent, setTransferModalStudent] = useState<Student | null>(null);
+  const [transferData, setTransferData] = useState({
+    toGrade: '',
+    toClassroom: '',
+    reason: 'إعادة توزيع الفصول الدراسية',
+    notes: ''
+  });
+
   // Form State
   const [formData, setFormData] = useState<Partial<Student>>({
     name: '',
@@ -48,11 +63,13 @@ export const StudentsView: React.FC = () => {
     stage: 'المرحلة الثانوية',
     grade: 'الصف الأول الثانوي',
     classroom: '1/1',
+    section: 'أ',
     academicYear: '2025/2026',
     status: 'نشط',
     parentName: '',
     relationship: 'أب',
     parentPhone: '',
+    parentEmail: '',
     phone: '',
     address: '',
     notes: '',
@@ -60,6 +77,7 @@ export const StudentsView: React.FC = () => {
 
   const settings = storageService.getSettings();
   const stages = settings.stages || [];
+  const activeAcademicYear = storageService.getActiveAcademicYear();
 
   const reloadStudents = () => {
     setStudents(storageService.getStudents());
@@ -105,19 +123,22 @@ export const StudentsView: React.FC = () => {
 
   const handleOpenAdd = () => {
     setEditingStudent(null);
+    const currYear = activeAcademicYear?.name || settings.currentAcademicYear || '2025/2026';
     setFormData({
       name: '',
-      studentCode: `STD-${Date.now().toString().slice(-4)}`,
+      studentCode: `STD-${Date.now().toString().slice(-5)}`,
       nationalId: '',
       gender: 'ذكر',
       stage: stages[0]?.name || 'المرحلة الثانوية',
       grade: stages[0]?.grades[0]?.name || 'الصف الأول الثانوي',
       classroom: stages[0]?.grades[0]?.classrooms[0] || '1/1',
-      academicYear: settings.currentAcademicYear || '2025/2026',
+      section: 'أ',
+      academicYear: currYear,
       status: 'نشط',
       parentName: '',
       relationship: 'أب',
       parentPhone: '',
+      parentEmail: '',
       phone: '',
       address: '',
       notes: '',
@@ -138,16 +159,22 @@ export const StudentsView: React.FC = () => {
       return;
     }
 
+    const currentYear = activeAcademicYear?.name || formData.academicYear || settings.currentAcademicYear || '2025/2026';
+    const currentYearId = activeAcademicYear?.id || 'AY-CURRENT';
+    const studentId = editingStudent ? editingStudent.id : `STU-${Date.now().toString().slice(-6)}`;
+    const now = getCairoNowISO();
+
     const studentRecord: Student = {
-      id: editingStudent ? editingStudent.id : `STD-${Date.now()}`,
+      id: studentId,
       studentCode: formData.studentCode || `STD-${Math.floor(1000 + Math.random() * 9000)}`,
       name: formData.name.trim(),
       nationalId: formData.nationalId?.trim() || undefined,
       gender: (formData.gender as any) || 'ذكر',
-      stage: formData.stage || 'المرحلة العامة',
+      stage: formData.stage || 'المرحلة الثانوية',
       grade: formData.grade,
       classroom: formData.classroom,
-      academicYear: formData.academicYear || '2025/2026',
+      section: formData.section || 'أ',
+      academicYear: currentYear,
       status: (formData.status as any) || 'نشط',
       parentName: formData.parentName?.trim() || 'ولي أمر الطالب',
       relationship: formData.relationship?.trim() || 'ولي أمر',
@@ -157,18 +184,87 @@ export const StudentsView: React.FC = () => {
       address: formData.address?.trim() || '',
       notes: formData.notes?.trim() || '',
       initialBehaviorScore: formData.initialBehaviorScore ?? 100,
-      createdAt: editingStudent?.createdAt || new Date().toISOString(),
+      createdAt: editingStudent?.createdAt || now,
+      updatedAt: now,
     };
 
+    // Save Student Record
     storageService.saveStudent(studentRecord);
+
+    // Save / Update Student Enrollment for current year
+    const enrollment: StudentEnrollment = {
+      id: `ENR-${studentId}-${currentYearId}`,
+      studentId: studentId,
+      studentCode: studentRecord.studentCode,
+      studentName: studentRecord.name,
+      academicYearId: currentYearId,
+      academicYearName: currentYear,
+      stage: studentRecord.stage,
+      grade: studentRecord.grade,
+      classroom: studentRecord.classroom,
+      section: studentRecord.section,
+      enrollmentStatus: studentRecord.status === 'نشط' ? 'نشط' : 'موقوف',
+      status: 'ACTIVE',
+      promotionStatus: 'ENROLLED',
+      enrollmentDate: activeAcademicYear?.startDate || now.split('T')[0],
+      createdAt: now,
+      updatedAt: now,
+    };
+    storageService.saveStudentEnrollment(enrollment);
+
     setIsFormModalOpen(false);
     reloadStudents();
   };
 
+  const handleOpenTransfer = (student: Student) => {
+    setTransferModalStudent(student);
+    setTransferData({
+      toGrade: student.grade,
+      toClassroom: student.classroom,
+      reason: 'إعادة توزيع ونقل فصل دراسي',
+      notes: ''
+    });
+  };
+
+  const handleExecuteTransfer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferModalStudent || !transferData.toGrade || !transferData.toClassroom) {
+      alert('يرجى تحديد الصف والفصل المحول إليه');
+      return;
+    }
+
+    const currentYearId = activeAcademicYear?.id || 'AY-CURRENT';
+    const now = getCairoNowISO();
+
+    const transferRecord: StudentTransferHistory = {
+      id: `TRF-${Date.now()}`,
+      studentId: transferModalStudent.id,
+      studentCode: transferModalStudent.studentCode,
+      studentName: transferModalStudent.name,
+      academicYearId: currentYearId,
+      fromGrade: transferModalStudent.grade,
+      fromClassroom: transferModalStudent.classroom,
+      toGrade: transferData.toGrade,
+      toClassroom: transferData.toClassroom,
+      transferType: 'نقل فصل',
+      reason: transferData.reason,
+      transferDate: now.split('T')[0],
+      notes: transferData.notes,
+      createdAt: now,
+    };
+
+    storageService.saveStudentTransfer(transferRecord);
+    setTransferModalStudent(null);
+    reloadStudents();
+  };
+
   const handleDelete = (id: string, name: string) => {
-    if (window.confirm(`هل أنت متأكد من حذف الطالب (${name}) نهائياً من النظام؟`)) {
-      storageService.deleteStudent(id);
-      reloadStudents();
+    if (window.confirm(`هل تريد نقل الطالب (${name}) إلى حالة "مؤرشف / غير نشط" للحفاظ على السجلات التاريخية؟`)) {
+      const target = students.find(s => s.id === id);
+      if (target) {
+        storageService.saveStudent({ ...target, status: 'غير نشط' });
+        reloadStudents();
+      }
     }
   };
 
@@ -197,7 +293,7 @@ export const StudentsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" dir="rtl">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
         <div>
@@ -208,30 +304,30 @@ export const StudentsView: React.FC = () => {
             <span>إدارة شؤون الطلاب والصفوف</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            سجل الطلاب العام، بيانات أولياء الأمور، توزيع الفصول، واستيراد القوائم
+            سجل الطلاب العام، بيانات أولياء الأمور، توزيع الفصول، واستيراد وتصدير القوائم
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setIsPromotionWizardOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200 transition-colors shadow-xs"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200 transition-colors shadow-xs cursor-pointer"
           >
-            <GraduationCap className="w-4 h-4 text-indigo-600" />
+            <Sparkles className="w-4 h-4 text-indigo-600" />
             <span>معالج ترحيل الطلاب</span>
           </button>
 
           <button
             onClick={() => setIsImportModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl border border-slate-300 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-2xl border border-slate-200 transition-colors shadow-xs cursor-pointer"
           >
             <Upload className="w-4 h-4 text-[#008e8b]" />
-            <span>استيراد من Excel</span>
+            <span>استيراد ملف Excel</span>
           </button>
 
           <button
             onClick={exportToExcel}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl border border-slate-300 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-2xl border border-slate-200 transition-colors shadow-xs cursor-pointer"
           >
             <Download className="w-4 h-4 text-emerald-600" />
             <span>تصدير Excel</span>
@@ -239,7 +335,7 @@ export const StudentsView: React.FC = () => {
 
           <button
             onClick={handleOpenAdd}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white font-bold text-xs rounded-2xl shadow-md transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white font-bold text-xs rounded-2xl transition-colors shadow-md cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>إضافة طالب جديد</span>
@@ -262,14 +358,14 @@ export const StudentsView: React.FC = () => {
               setSelectedClassroom('ALL');
               setSelectedStatus('ALL');
             }}
-            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-[#008e8b] transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-[#008e8b] transition-colors cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>إعادة تعيين الفلاتر</span>
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
           {/* Search box */}
           <div className="relative md:col-span-2">
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
@@ -330,6 +426,22 @@ export const StudentsView: React.FC = () => {
               ))}
             </select>
           </div>
+
+          {/* Status Filter */}
+          <div>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
+            >
+              <option value="ALL">جميع الحالات</option>
+              <option value="نشط">نشط</option>
+              <option value="موقوف">موقوف</option>
+              <option value="منقول">منقول</option>
+              <option value="متخرج">متخرج</option>
+              <option value="غير نشط">غير نشط</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -355,7 +467,7 @@ export const StudentsView: React.FC = () => {
                 <th className="p-4">ولي الأمر</th>
                 <th className="p-4">هاتف ولي الأمر</th>
                 <th className="p-4">حالة القيد</th>
-                <th className="p-4 text-center">الإجراءات</th>
+                <th className="p-4 text-center">الإجراءات والتحكم</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -382,7 +494,7 @@ export const StudentsView: React.FC = () => {
                     <td className="p-4">
                       <div className="font-semibold text-slate-800">{student.grade}</div>
                       <span className="inline-block bg-teal-100 text-[#008e8b] font-bold px-2 py-0.5 rounded-md text-[11px] mt-0.5">
-                        فصل: {student.classroom}
+                        فصل: {student.classroom} {student.section ? `(شعبة ${student.section})` : ''}
                       </span>
                     </td>
                     <td className="p-4 text-slate-600">{student.stage}</td>
@@ -392,8 +504,9 @@ export const StudentsView: React.FC = () => {
                     </td>
                     <td className="p-4 font-mono text-slate-700">
                       {student.parentPhone ? (
-                        <a href={`tel:${student.parentPhone}`} className="hover:text-[#008e8b] hover:underline">
-                          {student.parentPhone}
+                        <a href={`tel:${student.parentPhone}`} className="hover:text-[#008e8b] hover:underline flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-slate-400" />
+                          <span>{student.parentPhone}</span>
                         </a>
                       ) : (
                         '—'
@@ -404,6 +517,8 @@ export const StudentsView: React.FC = () => {
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
                           student.status === 'نشط'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : student.status === 'موقوف'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
                             : 'bg-rose-50 text-rose-700 border border-rose-200'
                         }`}
                       >
@@ -412,28 +527,35 @@ export const StudentsView: React.FC = () => {
                       </span>
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center justify-center gap-2">
+                      <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => {
                             setSelectedStudentForProfile(student);
                             setIsProfileModalOpen(true);
                           }}
-                          className="p-1.5 text-slate-500 hover:text-[#008e8b] hover:bg-teal-50 rounded-lg transition-colors"
-                          title="عرض ملف الطالب الشامل"
+                          className="p-1.5 text-slate-500 hover:text-[#008e8b] hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
+                          title="عرض ملف الطالب الشامل (Student 360)"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button
+                          onClick={() => handleOpenTransfer(student)}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                          title="نقل فصل / تحويل شعبة"
+                        >
+                          <ArrowRightLeft className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => handleOpenEdit(student)}
-                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                           title="تعديل بيانات الطالب"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(student.id, student.name)}
-                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="حذف الطالب"
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="أرشفة / تعطيل الطالب"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -447,6 +569,89 @@ export const StudentsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Quick Transfer Modal */}
+      {transferModalStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4 text-right">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ArrowRightLeft className="w-5 h-5 text-indigo-600" />
+                <span>نقل وتحويل الطالب: {transferModalStudent.name}</span>
+              </h3>
+              <button onClick={() => setTransferModalStudent(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleExecuteTransfer} className="space-y-3.5">
+              <div className="p-3 bg-indigo-50 rounded-xl text-xs text-indigo-900">
+                <span>الصف والفصل الحالي: <strong>{transferModalStudent.grade} (فصل {transferModalStudent.classroom})</strong></span>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">الصف المحول إليه <span className="text-rose-500">*</span></label>
+                <select
+                  required
+                  value={transferData.toGrade}
+                  onChange={(e) => setTransferData({ ...transferData, toGrade: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="">— اختر الصف —</option>
+                  {(stages.flatMap(s => s.grades || [])).map(g => (
+                    <option key={g.id} value={g.name}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">الفصل الجديد <span className="text-rose-500">*</span></label>
+                <select
+                  required
+                  value={transferData.toClassroom}
+                  onChange={(e) => setTransferData({ ...transferData, toClassroom: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="">— اختر الفصل —</option>
+                  {(() => {
+                    const gradeObj = (stages.flatMap(s => s.grades || [])).find(g => g.name === transferData.toGrade);
+                    const classList = gradeObj?.classrooms || ['1/1', '1/2', '1/3', '2/1', '2/2', '3/1'];
+                    return classList.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ));
+                  })()}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">سبب النقل / القرار</label>
+                <input
+                  type="text"
+                  required
+                  value={transferData.reason}
+                  onChange={(e) => setTransferData({ ...transferData, reason: e.target.value })}
+                  placeholder="مثال: إعادة توزيع الكثافة، طلب ولي الأمر"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setTransferModalStudent(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer shadow-xs"
+                >
+                  تأكيد النقل الآن
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Add / Edit Student Modal */}
       {isFormModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
@@ -456,7 +661,7 @@ export const StudentsView: React.FC = () => {
                 <GraduationCap className="w-5 h-5 text-[#008e8b]" />
                 <span>{editingStudent ? 'تعديل بيانات طالب' : 'إضافة طالب جديد'}</span>
               </h3>
-              <button onClick={() => setIsFormModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+              <button onClick={() => setIsFormModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 ✕
               </button>
             </div>
@@ -598,11 +803,12 @@ export const StudentsView: React.FC = () => {
                     <option value="موقوف">موقوف</option>
                     <option value="منقول">منقول</option>
                     <option value="متخرج">متخرج</option>
+                    <option value="غير نشط">غير نشط</option>
                   </select>
                 </div>
 
                 <div className="md:col-span-2 pt-2 border-t border-slate-200">
-                  <h4 className="text-xs font-bold text-[#008e8b] mb-3">بيانات ولي الأمر</h4>
+                  <h4 className="text-xs font-bold text-[#008e8b] mb-3">بيانات ولي الأمر والمتابعة</h4>
                 </div>
 
                 <div>
@@ -668,13 +874,13 @@ export const StudentsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsFormModalOpen(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold"
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md"
+                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
                 >
                   حفظ بيانات الطالب
                 </button>

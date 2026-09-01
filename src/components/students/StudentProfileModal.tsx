@@ -21,11 +21,17 @@ import {
   FileText,
   History,
   TrendingUp,
-  Activity
+  Activity,
+  MessageSquare,
+  Plus,
+  Printer,
+  Sparkles,
+  PhoneCall,
+  ArrowRightLeft
 } from 'lucide-react';
-import { Student } from '../../types';
+import { Student, ParentCommunicationLog, BehaviorScoreLedger, BehaviorViolation, CommunicationType } from '../../types';
 import { storageService } from '../../services/storageService';
-import { formatEgyptianDate } from '../../utils/egyptianTime';
+import { formatEgyptianDate, getCairoNowISO } from '../../utils/egyptianTime';
 
 interface StudentProfileModalProps {
   student: Student | null;
@@ -34,7 +40,7 @@ interface StudentProfileModalProps {
   onEdit?: (student: Student) => void;
 }
 
-type TabType = 'info' | 'attendance' | 'behavior' | 'schedule' | 'transfers';
+type TabType = 'info' | 'attendance' | 'behavior' | 'parentComms' | 'transfers' | 'schedule';
 
 export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   student,
@@ -43,6 +49,28 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   onEdit,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('info');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Quick action sub-modals
+  const [isCommModalOpen, setIsCommModalOpen] = useState(false);
+  const [commData, setCommData] = useState<{
+    type: CommunicationType;
+    reason: string;
+    details: string;
+    result: string;
+  }>({
+    type: 'مكالمة هاتفية',
+    reason: 'متابعة المستوى الأكاديمي والانضباط',
+    details: '',
+    result: '',
+  });
+
+  const [isPositiveScoreModalOpen, setIsPositiveScoreModalOpen] = useState(false);
+  const [positiveData, setPositiveData] = useState({
+    title: 'مشاركة متميزة والتزام',
+    points: 5,
+    notes: '',
+  });
 
   if (!isOpen || !student) return null;
 
@@ -55,27 +83,85 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const classAttendance = profile360?.classAttendance || [];
   const violations = profile360?.violations || [];
   const ledger = profile360?.ledger || [];
-  const positiveLedgers = ledger.filter(l => l.type === 'POSITIVE');
+  const parentCommunications = profile360?.parentCommunications || [];
   const stats = profile360?.stats || {
     totalDays: schoolAttendance.length,
-    presentDays: schoolAttendance.filter(a => a.status === 'حاضر').length,
+    presentDays: schoolAttendance.filter(a => a.status === 'حاضر' || a.status === 'متأخر').length,
     lateDays: schoolAttendance.filter(a => a.status === 'متأخر').length,
     absentDays: schoolAttendance.filter(a => a.status.includes('غائب')).length,
     attendancePercentage: 100,
     currentBehaviorScore: 100,
     behaviorStatusText: 'ممتاز',
     behaviorStatusColor: 'text-emerald-700 bg-emerald-100',
+    violationsCount: 0,
+    positivePoints: 0,
+    openCasesCount: 0,
+    parentCommunicationsCount: 0,
   };
 
   const studentSchedule = storageService
     .getSchedule()
     .filter(s => s.grade === student.grade && (!s.classroom || s.classroom === student.classroom));
 
+  const handleSaveParentComm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commData.details.trim()) {
+      alert('يرجى كتابة تفاصيل التواصل');
+      return;
+    }
+
+    const newComm: ParentCommunicationLog = {
+      id: `COMM-${Date.now()}`,
+      studentId: student.id,
+      studentName: student.name,
+      parentName: student.parentName,
+      communicationType: commData.type,
+      type: commData.type,
+      date: getCairoNowISO().split('T')[0],
+      reason: commData.reason,
+      details: commData.details.trim(),
+      result: commData.result.trim() || 'تم التواصل والمتابعة',
+      recordedBy: storageService.getCurrentUser()?.fullName || 'الأخصائي الاجتماعي',
+      createdAt: getCairoNowISO(),
+    };
+
+    storageService.saveParentCommunication(newComm);
+    setIsCommModalOpen(false);
+    setCommData({ type: 'مكالمة هاتفية', reason: 'متابعة المستوى الأكاديمي والانضباط', details: '', result: '' });
+    setRefreshKey(k => k + 1);
+  };
+
+  const handleSavePositiveScore = (e: React.FormEvent) => {
+    e.preventDefault();
+    const ledgerEntry: BehaviorScoreLedger = {
+      id: `LEDG-${Date.now()}`,
+      studentId: student.id,
+      studentName: student.name,
+      type: 'POSITIVE',
+      sourceType: 'positive_behavior',
+      points: Number(positiveData.points) || 5,
+      reason: positiveData.title,
+      date: getCairoNowISO().split('T')[0],
+      recordedBy: storageService.getCurrentUser()?.fullName || 'المعلم / الإدارة',
+      balanceAfter: Math.min(100, (stats.currentBehaviorScore || 100) + Number(positiveData.points)),
+      createdAt: getCairoNowISO(),
+    };
+
+    storageService.addBehaviorScoreTransaction(ledgerEntry);
+    setIsPositiveScoreModalOpen(false);
+    setPositiveData({ title: 'مشاركة متميزة والتزام', points: 5, notes: '' });
+    setRefreshKey(k => k + 1);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto" dir="rtl">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-5xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Header */}
-        <div className="p-6 bg-gradient-to-l from-teal-700 via-[#008e8b] to-indigo-800 text-white flex items-center justify-between">
+        {/* Top Gradient Header */}
+        <div className="p-6 bg-gradient-to-l from-teal-800 via-[#008e8b] to-indigo-800 text-white flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white text-2xl font-bold border border-white/30 shadow-inner">
               {student.name.charAt(0)}
@@ -103,476 +189,289 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrint}
+              className="p-2 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+              title="طباعة السجل الشامل"
+            >
+              <Printer className="w-4 h-4" />
+              <span className="hidden sm:inline">طباعة</span>
+            </button>
             {onEdit && (
               <button
                 onClick={() => {
                   onClose();
                   onEdit(student);
                 }}
-                className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-colors"
+                className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 تعديل البيانات
               </button>
             )}
             <button
               onClick={onClose}
-              className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-xl transition-colors"
+              className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-xl transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Tabs Navigation */}
-        <div className="px-6 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-x-auto text-xs font-bold custom-scrollbar">
+        {/* Quick Actions Bar */}
+        <div className="bg-slate-50 px-6 py-2.5 border-b border-slate-200 flex items-center justify-between gap-2 overflow-x-auto">
+          <span className="text-xs font-bold text-slate-500 flex items-center gap-1 shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-[#008e8b]" />
+            <span>إجراءات سريعة:</span>
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsCommModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-[#008e8b] text-xs font-bold border border-teal-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <PhoneCall className="w-3.5 h-3.5" />
+              <span>تسجيل تواصل مع ولي الأمر</span>
+            </button>
+            <button
+              onClick={() => setIsPositiveScoreModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold border border-emerald-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Star className="w-3.5 h-3.5 text-emerald-600" />
+              <span>إضافة تعزيز سلوكي (+)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-6 bg-white border-b border-slate-200">
+          <div className="p-3.5 rounded-2xl bg-teal-50/60 border border-teal-100">
+            <div className="flex items-center justify-between text-xs text-[#008e8b] font-bold">
+              <span>نسبة الحضور</span>
+              <Clock className="w-4 h-4" />
+            </div>
+            <div className="text-2xl font-black text-slate-900 mt-1 font-mono">{stats.attendancePercentage}%</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              حاضر: {stats.presentDays} | غائب: {stats.absentDays} يوم
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100">
+            <div className="flex items-center justify-between text-xs text-indigo-700 font-bold">
+              <span>رصيد السلوك</span>
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div className="text-2xl font-black text-slate-900 mt-1 font-mono">{stats.currentBehaviorScore}/100</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              التقييم: <strong className={stats.behaviorStatusColor}>{stats.behaviorStatusText}</strong>
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-100">
+            <div className="flex items-center justify-between text-xs text-amber-700 font-bold">
+              <span>المخالفات المرصودة</span>
+              <ShieldAlert className="w-4 h-4" />
+            </div>
+            <div className="text-2xl font-black text-slate-900 mt-1 font-mono">{violations.length}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              نقاط إيجابية: +{stats.positivePoints || 0}
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-purple-50/60 border border-purple-100">
+            <div className="flex items-center justify-between text-xs text-purple-700 font-bold">
+              <span>سجلات التواصل</span>
+              <MessageSquare className="w-4 h-4" />
+            </div>
+            <div className="text-2xl font-black text-slate-900 mt-1 font-mono">{parentCommunications.length}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              سنوات القيد: {enrollments.length || 1}
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-2 px-6 pt-3 bg-slate-50 border-b border-slate-200 overflow-x-auto">
           <button
             onClick={() => setActiveTab('info')}
-            className={`py-3.5 px-4 border-b-2 flex items-center gap-2 transition-all shrink-0 ${
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'info'
-                ? 'border-[#008e8b] text-[#008e8b] bg-white'
+                ? 'border-[#008e8b] text-[#008e8b]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <User className="w-4 h-4" />
-            <span>البيانات وسجل القيود ({enrollments.length})</span>
+            البيانات الأساسية والاتصال
           </button>
-
           <button
             onClick={() => setActiveTab('attendance')}
-            className={`py-3.5 px-4 border-b-2 flex items-center gap-2 transition-all shrink-0 ${
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'attendance'
-                ? 'border-[#008e8b] text-[#008e8b] bg-white'
+                ? 'border-[#008e8b] text-[#008e8b]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Calendar className="w-4 h-4" />
-            <span>الحضور والغياب والحصص</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-slate-200 text-[10px] text-slate-700">{stats.attendancePercentage}%</span>
+            سجل الحضور والغياب ({schoolAttendance.length})
           </button>
-
           <button
             onClick={() => setActiveTab('behavior')}
-            className={`py-3.5 px-4 border-b-2 flex items-center gap-2 transition-all shrink-0 ${
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'behavior'
-                ? 'border-[#008e8b] text-[#008e8b] bg-white'
+                ? 'border-[#008e8b] text-[#008e8b]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Shield className="w-4 h-4" />
-            <span>السلوك الشامل 360</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${stats.behaviorStatusColor}`}>
-              {stats.currentBehaviorScore} / 100
-            </span>
+            الانضباط والتعزيز ({violations.length + ledger.length})
           </button>
-
           <button
-            onClick={() => setActiveTab('schedule')}
-            className={`py-3.5 px-4 border-b-2 flex items-center gap-2 transition-all shrink-0 ${
-              activeTab === 'schedule'
-                ? 'border-[#008e8b] text-[#008e8b] bg-white'
+            onClick={() => setActiveTab('parentComms')}
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+              activeTab === 'parentComms'
+                ? 'border-[#008e8b] text-[#008e8b]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <BookOpen className="w-4 h-4" />
-            <span>الجدول الدراسي</span>
+            التواصل مع ولي الأمر ({parentCommunications.length})
           </button>
-
           <button
             onClick={() => setActiveTab('transfers')}
-            className={`py-3.5 px-4 border-b-2 flex items-center gap-2 transition-all shrink-0 ${
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'transfers'
-                ? 'border-[#008e8b] text-[#008e8b] bg-white'
+                ? 'border-[#008e8b] text-[#008e8b]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <History className="w-4 h-4" />
-            <span>الترقيات والتحويلات ({transfers.length})</span>
+            القيود وحركات النقل ({enrollments.length + transfers.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('schedule')}
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+              activeTab === 'schedule'
+                ? 'border-[#008e8b] text-[#008e8b]'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            الجدول الأسبوعي
           </button>
         </div>
 
         {/* Tab Content */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6 custom-scrollbar">
-          {/* TAB 1: INFO & ENROLLMENTS */}
+        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+          {/* TAB 1: Basic Info */}
           {activeTab === 'info' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Personal Data */}
-                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
-                  <h4 className="text-xs font-bold text-[#008e8b] uppercase tracking-wider flex items-center gap-2 mb-2">
-                    <User className="w-4 h-4" />
-                    <span>بيانات الطالب المدرسية</span>
-                  </h4>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">الرقم القومي:</span>
-                      <span className="font-bold text-slate-700 font-mono">{student.nationalId || '—'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">النوع:</span>
-                      <span className="font-bold text-slate-700">{student.gender || '—'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">تاريخ الميلاد:</span>
-                      <span className="font-bold text-slate-700">{formatEgyptianDate(student.birthDate)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">حالة القيد:</span>
-                      <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-block">
-                        {student.status}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">هاتف الطالب:</span>
-                      <span className="font-bold text-slate-700 font-mono">{student.phone || '—'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">العنوان السكني:</span>
-                      <span className="font-bold text-slate-700">{student.address || '—'}</span>
-                    </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Student info */}
+              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-4">
+                <h3 className="text-xs font-bold text-[#008e8b] flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  <span>بيانات الطالب الرسمية</span>
+                </h3>
+                <div className="space-y-2.5 text-xs">
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">الاسم الكامل:</span>
+                    <span className="font-bold text-slate-800">{student.name}</span>
                   </div>
-                </div>
-
-                {/* Guardian Data */}
-                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
-                  <h4 className="text-xs font-bold text-[#008e8b] uppercase tracking-wider flex items-center gap-2 mb-2">
-                    <GraduationCap className="w-4 h-4" />
-                    <span>بيانات ولي الأمر والمتابعة</span>
-                  </h4>
-
-                  <div className="space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-slate-200">
-                      <span className="text-slate-500">اسم ولي الأمر:</span>
-                      <span className="font-bold text-slate-800">{student.parentName || '—'}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-slate-200">
-                      <span className="text-slate-500">صلة القرابة:</span>
-                      <span className="font-bold text-slate-800">{student.relationship || 'ولي أمر'}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-slate-200">
-                      <span className="text-slate-500 flex items-center gap-1">
-                        <Phone className="w-3.5 h-3.5 text-[#008e8b]" />
-                        <span>رقم الهاتف:</span>
-                      </span>
-                      <span className="font-bold text-slate-800 font-mono">{student.parentPhone || '—'}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-slate-200">
-                      <span className="text-slate-500 flex items-center gap-1">
-                        <Mail className="w-3.5 h-3.5 text-[#008e8b]" />
-                        <span>البريد الإلكتروني:</span>
-                      </span>
-                      <span className="font-bold text-slate-800 font-mono text-[11px]">{student.parentEmail || '—'}</span>
-                    </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">كود الطالب:</span>
+                    <span className="font-mono font-bold text-slate-800">{student.studentCode}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">الرقم القومي:</span>
+                    <span className="font-mono text-slate-800">{student.nationalId || 'غير مسجل'}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">النوع:</span>
+                    <span className="text-slate-800">{student.gender}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">المرحلة والصف:</span>
+                    <span className="font-bold text-slate-800">{student.stage} - {student.grade}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">الفصل والشعبة:</span>
+                    <span className="font-bold text-[#008e8b]">فصل {student.classroom} {student.section ? `(شعبة ${student.section})` : ''}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-slate-500">العنوان:</span>
+                    <span className="text-slate-800">{student.address || '—'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Multi-Year Enrollment History */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-indigo-600" />
-                  <span>سجل القيود عبر السنوات الدراسية (Enrollments History)</span>
-                </h4>
-                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-                  <table className="w-full text-right text-xs">
-                    <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                      <tr>
-                        <th className="p-3">العام الدراسي</th>
-                        <th className="p-3">الصف الدراسي</th>
-                        <th className="p-3">الفصل</th>
-                        <th className="p-3">الشعبة</th>
-                        <th className="p-3">حالة القيد</th>
-                        <th className="p-3">تاريخ القيد</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {enrollments.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="p-4 text-center text-slate-400">
-                            لا توجد قيود مسجلة لهذا الطالب
-                          </td>
-                        </tr>
-                      ) : (
-                        enrollments.map(enr => (
-                          <tr key={enr.id} className="hover:bg-slate-50/80">
-                            <td className="p-3 font-bold text-slate-900">{enr.academicYearName}</td>
-                            <td className="p-3 text-slate-700">{enr.grade}</td>
-                            <td className="p-3 font-mono text-slate-600">{enr.classroom}</td>
-                            <td className="p-3 text-slate-500">{enr.section || '—'}</td>
-                            <td className="p-3">
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md font-bold text-[11px]">
-                                {enr.promotionStatus || enr.status || 'مقيد'}
-                              </span>
-                            </td>
-                            <td className="p-3 font-mono text-slate-500">{formatEgyptianDate(enr.enrollmentDate)}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+              {/* Parent info */}
+              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-4">
+                <h3 className="text-xs font-bold text-indigo-700 flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  <span>بيانات ولي الأمر والمتابعة</span>
+                </h3>
+                <div className="space-y-2.5 text-xs">
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">اسم ولي الأمر:</span>
+                    <span className="font-bold text-slate-800">{student.parentName}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">صلة القرابة:</span>
+                    <span className="text-slate-800">{student.relationship || 'ولي أمر'}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">هاتف ولي الأمر:</span>
+                    <a href={`tel:${student.parentPhone}`} className="font-mono font-bold text-[#008e8b] hover:underline">
+                      {student.parentPhone || '—'}
+                    </a>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">هاتف الطالب:</span>
+                    <span className="font-mono text-slate-800">{student.phone || '—'}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-slate-500">ملاحظات خاصة:</span>
+                    <span className="text-slate-800">{student.notes || 'لا توجد ملاحظات'}</span>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 2: ATTENDANCE (School + Class Attendance) */}
+          {/* TAB 2: Attendance */}
           {activeTab === 'attendance' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                <div className="p-3 bg-teal-50 border border-teal-200 rounded-2xl">
-                  <div className="text-xl font-bold text-[#008e8b] font-mono">{stats.attendancePercentage}%</div>
-                  <div className="text-[11px] text-teal-800 font-semibold mt-0.5">نسبة الحضور العامة</div>
-                </div>
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
-                  <div className="text-xl font-bold text-emerald-700 font-mono">{stats.presentDays}</div>
-                  <div className="text-[11px] text-emerald-800 font-semibold mt-0.5">أيام الحضور الكامل</div>
-                </div>
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl">
-                  <div className="text-xl font-bold text-amber-700 font-mono">{stats.lateDays}</div>
-                  <div className="text-[11px] text-amber-800 font-semibold mt-0.5">مرات التأخير الصباحي</div>
-                </div>
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl">
-                  <div className="text-xl font-bold text-rose-700 font-mono">{stats.absentDays}</div>
-                  <div className="text-[11px] text-rose-800 font-semibold mt-0.5">أيام الغياب</div>
-                </div>
-              </div>
-
-              {/* School Daily Attendance */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-teal-600" />
-                  <span>سجل الحضور والغياب المدرسي اليومي</span>
-                </h4>
-                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-                  <table className="w-full text-xs text-right border-collapse">
-                    <thead className="bg-slate-100 text-slate-700 font-bold">
-                      <tr>
-                        <th className="p-3">التاريخ</th>
-                        <th className="p-3">اليوم</th>
-                        <th className="p-3">الحالة</th>
-                        <th className="p-3">وقت الحضور</th>
-                        <th className="p-3">التأخير (دقيقة)</th>
-                        <th className="p-3">الملاحظات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {schoolAttendance.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="p-6 text-center text-slate-400">
-                            لا توجد سجلات حضور مسجلة لهذا الطالب حتى الآن
-                          </td>
-                        </tr>
-                      ) : (
-                        schoolAttendance.slice(0, 30).map(r => (
-                          <tr key={r.id} className="hover:bg-slate-50">
-                            <td className="p-3 font-mono text-slate-700">{formatEgyptianDate(r.date)}</td>
-                            <td className="p-3 text-slate-600">{r.dayName}</td>
-                            <td className="p-3">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                                  r.status === 'حاضر'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : r.status === 'متأخر'
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-rose-100 text-rose-800'
-                                }`}
-                              >
-                                {r.status}
-                              </span>
-                            </td>
-                            <td className="p-3 font-mono text-slate-700">{r.checkInTime || '—'}</td>
-                            <td className="p-3 font-mono text-slate-700">{r.lateMinutes ? `${r.lateMinutes} دقيقة` : '—'}</td>
-                            <td className="p-3 text-slate-600">{r.absenceReason || r.notes || '—'}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Class Period Attendance Records */}
-              {classAttendance.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-indigo-600" />
-                    <span>رصد حضور الحصص الدراسية (Class Period Attendance)</span>
-                  </h4>
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-                    <table className="w-full text-xs text-right border-collapse">
-                      <thead className="bg-slate-100 text-slate-700 font-bold">
-                        <tr>
-                          <th className="p-3">التاريخ</th>
-                          <th className="p-3">الحصة</th>
-                          <th className="p-3">المادة</th>
-                          <th className="p-3">المعلم</th>
-                          <th className="p-3">حالة الطالب بالحصة</th>
-                          <th className="p-3">ملاحظات</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {classAttendance.slice(0, 20).map(ca => (
-                          <tr key={ca.id} className="hover:bg-slate-50">
-                            <td className="p-3 font-mono text-slate-700">{formatEgyptianDate(ca.date)}</td>
-                            <td className="p-3 font-mono text-slate-700">حصة {ca.periodNumber}</td>
-                            <td className="p-3 font-bold text-[#008e8b]">{ca.subject}</td>
-                            <td className="p-3 text-slate-600">{ca.teacherName || '—'}</td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                ca.status === 'حاضر' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                              }`}>
-                                {ca.status}
-                              </span>
-                            </td>
-                            <td className="p-3 text-slate-500">{ca.notes || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: BEHAVIOR 360 */}
-          {activeTab === 'behavior' && (
-            <div className="space-y-6">
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-800">مؤشر الانضباط والسلوك التراكمي (Behavior 360)</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    التقييم الشامل بناءً على اللائحة المدرسية، النقاط الإيجابية، والمخالفات
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <div className="text-2xl font-bold font-mono text-slate-800">
-                      {stats.currentBehaviorScore} <span className="text-xs text-slate-400 font-normal">/ 100</span>
-                    </div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${stats.behaviorStatusColor}`}>
-                      {stats.behaviorStatusText}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Positive Behavior Ledger */}
-              {positiveLedgers.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-emerald-700 flex items-center gap-2">
-                    <Star className="w-4 h-4 text-emerald-600" />
-                    <span>سجل النقاط والمحفزات الإيجابية (+Points)</span>
-                  </h4>
-                  <div className="border border-emerald-100 bg-emerald-50/40 rounded-2xl overflow-hidden">
-                    <table className="w-full text-xs text-right">
-                      <thead className="bg-emerald-100/60 text-emerald-900 font-bold">
-                        <tr>
-                          <th className="p-3">التاريخ</th>
-                          <th className="p-3">السلوك الإيجابي / المحفز</th>
-                          <th className="p-3">النقاط الممنوحة</th>
-                          <th className="p-3">المسجل</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-emerald-100">
-                        {positiveLedgers.map(p => (
-                          <tr key={p.id}>
-                            <td className="p-3 font-mono">{formatEgyptianDate(p.date)}</td>
-                            <td className="p-3 font-bold text-emerald-800">{p.reason}</td>
-                            <td className="p-3 font-bold text-emerald-600 font-mono">+{p.points} نقطة</td>
-                            <td className="p-3 text-slate-600">{p.recordedBy || 'المعلم'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Violations Table */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-rose-700 flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-rose-600" />
-                  <span>المخالفات وسجل الخصومات (-Points)</span>
-                </h4>
-                <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                  <table className="w-full text-xs text-right border-collapse">
-                    <thead className="bg-slate-100 text-slate-700 font-bold">
-                      <tr>
-                        <th className="p-3">التاريخ</th>
-                        <th className="p-3">المخالفة</th>
-                        <th className="p-3">الدرجة</th>
-                        <th className="p-3">النقاط المخصومة</th>
-                        <th className="p-3">الإجراء المتخذ</th>
-                        <th className="p-3">إخطار ولي الأمر</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {violations.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="p-6 text-center text-emerald-600 font-medium">
-                            <CheckCircle className="w-6 h-6 mx-auto mb-1 text-emerald-500" />
-                            سجل الطالب نظيف، لا توجد أي مخالفات سلوكية مسجلة.
-                          </td>
-                        </tr>
-                      ) : (
-                        violations.map(v => (
-                          <tr key={v.id} className="hover:bg-slate-50">
-                            <td className="p-3 font-mono text-slate-700">{formatEgyptianDate(v.date)}</td>
-                            <td className="p-3 font-bold text-slate-800">{v.violationName}</td>
-                            <td className="p-3 text-slate-600">{v.severity || 'متوسطة'}</td>
-                            <td className="p-3 font-mono font-bold text-rose-600">-{v.pointsDeducted} نقطة</td>
-                            <td className="p-3 text-slate-700">{v.actionTaken || '—'}</td>
-                            <td className="p-3">
-                              {v.parentNotified ? (
-                                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold text-[10px]">تم الإخطار</span>
-                              ) : (
-                                <span className="text-slate-400 text-[10px]">لم يخطر</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: SCHEDULE */}
-          {activeTab === 'schedule' && (
             <div className="space-y-4">
-              <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                <table className="w-full text-xs text-right border-collapse">
-                  <thead className="bg-slate-100 text-slate-700 font-bold">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                     <tr>
-                      <th className="p-3">اليوم</th>
-                      <th className="p-3">رقم الحصة</th>
-                      <th className="p-3">المادة</th>
-                      <th className="p-3">المعلم</th>
-                      <th className="p-3">الموعد</th>
-                      <th className="p-3">القاعة</th>
+                      <th className="p-3">التاريخ</th>
+                      <th className="p-3">حالة الحضور</th>
+                      <th className="p-3">وقت الحضور</th>
+                      <th className="p-3">العذر / السبب</th>
+                      <th className="p-3">المسؤول</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {studentSchedule.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-6 text-center text-slate-400">
-                          لم يتم إدراج جدول حصص دراسي لهذا الصف حتى الآن
-                        </td>
-                      </tr>
-                    ) : (
-                      studentSchedule.map(s => (
-                        <tr key={s.id} className="hover:bg-slate-50">
-                          <td className="p-3 font-bold text-slate-800">{s.dayName}</td>
-                          <td className="p-3 font-mono text-slate-700">الحصة {s.periodNumber}</td>
-                          <td className="p-3 font-bold text-[#008e8b]">{s.subject}</td>
-                          <td className="p-3 text-slate-700">{s.teacherName || '—'}</td>
-                          <td className="p-3 font-mono text-slate-600">{s.startTime} - {s.endTime}</td>
-                          <td className="p-3 text-slate-600">{s.roomNumber || '—'}</td>
+                    {schoolAttendance.length > 0 ? (
+                      schoolAttendance.map((rec, i) => (
+                        <tr key={i} className="hover:bg-slate-50">
+                          <td className="p-3 font-mono">{rec.date}</td>
+                          <td className="p-3">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                rec.status === 'حاضر'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : rec.status === 'متأخر' || rec.status === 'حاضر متأخر'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}
+                            >
+                              {rec.status}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono text-slate-600">{rec.checkInTime || '—'}</td>
+                          <td className="p-3 text-slate-600">{rec.absenceReason || rec.notes || '—'}</td>
+                          <td className="p-3 text-slate-500">{rec.recordedBy || 'مسؤول الحضور'}</td>
                         </tr>
                       ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-400">
+                          لا توجد سجلات حضور مسجلة لهذا الطالب حتى الآن.
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>
@@ -580,39 +479,278 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
             </div>
           )}
 
-          {/* TAB 5: TRANSFERS & PROMOTIONS */}
-          {activeTab === 'transfers' && (
+          {/* TAB 3: Behavior & Discipline */}
+          {activeTab === 'behavior' && (
+            <div className="space-y-6">
+              {/* Positive reinforcement ledger */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                    <Star className="w-4 h-4 text-emerald-600" />
+                    <span>سجل التعزيز والسلوك الإيجابي (+ النقاط)</span>
+                  </h4>
+                  <button
+                    onClick={() => setIsPositiveScoreModalOpen(true)}
+                    className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
+                  >
+                    + إضافة تعزيز جديد
+                  </button>
+                </div>
+                <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-emerald-50/50 text-emerald-900 font-bold border-b border-emerald-100">
+                      <tr>
+                        <th className="p-3">التاريخ</th>
+                        <th className="p-3">النوع / النشاط</th>
+                        <th className="p-3">النقاط</th>
+                        <th className="p-3">الرصيد بعد الإضافة</th>
+                        <th className="p-3">المسجل</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {ledger.filter(l => l.type === 'POSITIVE').length > 0 ? (
+                        ledger
+                          .filter(l => l.type === 'POSITIVE')
+                          .map((item, i) => (
+                            <tr key={i} className="hover:bg-slate-50">
+                              <td className="p-3 font-mono">{item.date}</td>
+                              <td className="p-3 font-semibold text-slate-800">{item.reason}</td>
+                              <td className="p-3 font-mono font-bold text-emerald-600">+{item.points}</td>
+                              <td className="p-3 font-mono text-slate-600">{item.balanceAfter}/100</td>
+                              <td className="p-3 text-slate-500">{item.recordedBy || 'المدرسة'}</td>
+                            </tr>
+                          ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-slate-400">
+                            لا توجد نقاط تعزيز إيجابي مسجلة.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Violations */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-rose-800 flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-rose-600" />
+                  <span>المخالفات والإجراءات التربوية</span>
+                </h4>
+                <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-rose-50/50 text-rose-900 font-bold border-b border-rose-100">
+                      <tr>
+                        <th className="p-3">التاريخ</th>
+                        <th className="p-3">درجة المخالفة</th>
+                        <th className="p-3">وصف المخالفة</th>
+                        <th className="p-3">الإجراء المتخذ</th>
+                        <th className="p-3">الخصم</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {violations.length > 0 ? (
+                        violations.map((v, i) => (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="p-3 font-mono">{v.date}</td>
+                            <td className="p-3">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                {v.severity || 'مخالفة'}
+                              </span>
+                            </td>
+                            <td className="p-3 font-semibold text-slate-800">{v.violationName}</td>
+                            <td className="p-3 text-slate-600">{v.actionTaken || 'تنبيه شفهي'}</td>
+                            <td className="p-3 font-mono font-bold text-rose-600">-{v.pointsDeducted || 0}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-slate-400">
+                            سجل الطالب نظيف، لا توجد مخالفات مسجلة.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Parent Communications */}
+          {activeTab === 'parentComms' && (
             <div className="space-y-4">
-              <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                <table className="w-full text-xs text-right border-collapse">
-                  <thead className="bg-slate-100 text-slate-700 font-bold">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800">سجل التواصل والمتابعة الدورية مع الأسرة</h4>
+                <button
+                  onClick={() => setIsCommModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#008e8b] hover:bg-teal-700 text-white text-xs font-bold cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>تسجيل تواصل جديد</span>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {parentCommunications.length > 0 ? (
+                  parentCommunications.map((log) => (
+                    <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 font-bold text-slate-800">
+                          <span className="px-2 py-0.5 bg-teal-100 text-[#008e8b] rounded-md font-mono">{log.communicationType || log.type}</span>
+                          <span>{log.reason}</span>
+                        </div>
+                        <span className="text-slate-400 font-mono text-[11px]">{log.date}</span>
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-xl border border-slate-100">
+                        {log.details}
+                      </p>
+                      {log.result && (
+                        <div className="text-[11px] text-indigo-700 font-semibold flex items-center gap-1">
+                          <span>النتيجة والتوصيات:</span>
+                          <span>{log.result}</span>
+                        </div>
+                      )}
+                      <div className="text-[10px] text-slate-400 text-left">
+                        المسجل: {log.recordedBy || 'المدرسة'}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-slate-400 text-xs">
+                    لا يوجد سجل تواصل مع ولي الأمر حتى الآن.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: Enrollments & Transfers */}
+          {activeTab === 'transfers' && (
+            <div className="space-y-6">
+              {/* Enrollments History */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <GraduationCap className="w-4 h-4 text-[#008e8b]" />
+                  <span>سجل القيد الأكاديمي عبر الأعوام</span>
+                </h4>
+                <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">العام الدراسي</th>
+                        <th className="p-3">الصف</th>
+                        <th className="p-3">الفصل</th>
+                        <th className="p-3">حالة القيد</th>
+                        <th className="p-3">القرار / الترحيل</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {enrollments.length > 0 ? (
+                        enrollments.map((enr, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="p-3 font-bold font-mono text-[#008e8b]">{enr.academicYearName}</td>
+                            <td className="p-3 text-slate-800">{enr.grade}</td>
+                            <td className="p-3 font-mono font-semibold">فصل {enr.classroom}</td>
+                            <td className="p-3">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                {enr.enrollmentStatus || 'نشط'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-600">{enr.promotionStatus || 'مقيد'}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-slate-400">
+                            العام الحالي: {student.academicYear} - {student.grade} ({student.classroom})
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Transfers */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-indigo-800 flex items-center gap-1.5">
+                  <ArrowRightLeft className="w-4 h-4 text-indigo-600" />
+                  <span>حركات النقل وتغيير الفصول</span>
+                </h4>
+                <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-indigo-50/50 text-indigo-900 font-bold border-b border-indigo-100">
+                      <tr>
+                        <th className="p-3">تاريخ النقل</th>
+                        <th className="p-3">من فصل</th>
+                        <th className="p-3">إلى فصل</th>
+                        <th className="p-3">السبب</th>
+                        <th className="p-3">المعتمد</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {transfers.length > 0 ? (
+                        transfers.map((trf, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="p-3 font-mono">{trf.transferDate}</td>
+                            <td className="p-3 text-rose-700">{trf.fromGrade} - فصل {trf.fromClassroom}</td>
+                            <td className="p-3 font-bold text-emerald-700">{trf.toGrade} - فصل {trf.toClassroom}</td>
+                            <td className="p-3 text-slate-700">{trf.reason}</td>
+                            <td className="p-3 text-slate-500">{trf.approvedBy || 'شؤون الطلاب'}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-slate-400">
+                            لا توجد حركات نقل مسجلة للطالب.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: Schedule */}
+          {activeTab === 'schedule' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800">
+                  جدول الحصص الأسبوعي لفصل: <span className="text-[#008e8b] font-bold">{student.grade} - {student.classroom}</span>
+                </h4>
+              </div>
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                     <tr>
-                      <th className="p-3">تاريخ العملية</th>
-                      <th className="p-3">نوع الحركة</th>
-                      <th className="p-3">من صف / فصل</th>
-                      <th className="p-3">إلى صف / فصل</th>
-                      <th className="p-3">السبب / القرار</th>
-                      <th className="p-3">المسؤول</th>
+                      <th className="p-3">اليوم</th>
+                      <th className="p-3">الحصة</th>
+                      <th className="p-3">المادة</th>
+                      <th className="p-3">المعلم</th>
+                      <th className="p-3">القاعة / المعمل</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {transfers.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-6 text-center text-slate-400">
-                          لا توجد تحويلات سابقة مسجلة لهذا الطالب
-                        </td>
-                      </tr>
-                    ) : (
-                      transfers.map(tr => (
-                        <tr key={tr.id} className="hover:bg-slate-50">
-                          <td className="p-3 font-mono text-slate-700">{formatEgyptianDate(tr.transferDate)}</td>
-                          <td className="p-3 font-bold text-indigo-700">{tr.transferType}</td>
-                          <td className="p-3 text-slate-600">{tr.fromGrade} ({tr.fromClassroom})</td>
-                          <td className="p-3 text-slate-900 font-bold">{tr.toGrade} ({tr.toClassroom})</td>
-                          <td className="p-3 text-slate-700">{tr.reason || 'ترحيل سنوي'}</td>
-                          <td className="p-3 text-slate-500">{tr.performedBy || 'مدير النظام'}</td>
+                    {studentSchedule.length > 0 ? (
+                      studentSchedule.map((s, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-3 font-bold text-slate-800">{s.dayName || s.dayOfWeek}</td>
+                          <td className="p-3 font-mono font-bold text-[#008e8b]">الحصة {s.periodNumber}</td>
+                          <td className="p-3 font-semibold text-slate-900">{s.subject}</td>
+                          <td className="p-3 text-slate-600">{s.teacherName}</td>
+                          <td className="p-3 text-slate-500">{s.roomNumber || 'الفصل الأصلي'}</td>
                         </tr>
                       ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-400">
+                          لم يتم تسكين جدول حصص لهذا الفصل حتى الآن.
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>
@@ -620,6 +758,142 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Quick Modal: Parent Comm */}
+        {isCommModalOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4 text-right">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <PhoneCall className="w-5 h-5 text-[#008e8b]" />
+                <span>تسجيل تواصل مع ولي أمر: {student.name}</span>
+              </h3>
+
+              <form onSubmit={handleSaveParentComm} className="space-y-3.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">وسيلة التواصل</label>
+                  <select
+                    value={commData.type}
+                    onChange={e => setCommData({ ...commData, type: e.target.value as any })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  >
+                    <option value="مكالمة هاتفية">مكالمة هاتفية</option>
+                    <option value="مقابلة شخصية">مقابلة شخصية بالمدرسة</option>
+                    <option value="WhatsApp">WhatsApp</option>
+                    <option value="رسالة SMS">رسالة SMS</option>
+                    <option value="بريد إلكتروني">بريد إلكتروني</option>
+                    <option value="اجتماع رسمي">اجتماع رسمي</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">سبب التواصل</label>
+                  <input
+                    type="text"
+                    required
+                    value={commData.reason}
+                    onChange={e => setCommData({ ...commData, reason: e.target.value })}
+                    placeholder="مثال: متابعة درجات الشهر، مناقشة الغياب المتكرر"
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">تفاصيل ما دار في المكالمة / الجلسة <span className="text-rose-500">*</span></label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={commData.details}
+                    onChange={e => setCommData({ ...commData, details: e.target.value })}
+                    placeholder="اكتب ملخص حديثك مع ولي الأمر..."
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">النتيجة والاتفاق</label>
+                  <input
+                    type="text"
+                    value={commData.result}
+                    onChange={e => setCommData({ ...commData, result: e.target.value })}
+                    placeholder="مثال: وعد ولي الأمر بالحضور يوم الأحد القادم"
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsCommModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 rounded-xl text-xs font-bold text-white bg-[#008e8b] hover:bg-teal-700 cursor-pointer shadow-xs"
+                  >
+                    حفظ السجل
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Modal: Positive Score */}
+        {isPositiveScoreModalOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4 text-right">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Star className="w-5 h-5 text-emerald-600" />
+                <span>إضافة تعزيز سلوكي إيجابي: {student.name}</span>
+              </h3>
+
+              <form onSubmit={handleSavePositiveScore} className="space-y-3.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">نوع التعزيز / النشاط <span className="text-rose-500">*</span></label>
+                  <input
+                    type="text"
+                    required
+                    value={positiveData.title}
+                    onChange={e => setPositiveData({ ...positiveData, title: e.target.value })}
+                    placeholder="مثال: تفوق أكاديمي، مساعدة الزملاء، انضباط تام"
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">النقاط الممنوحة (+)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    required
+                    value={positiveData.points}
+                    onChange={e => setPositiveData({ ...positiveData, points: Number(e.target.value) })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsPositiveScoreModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 cursor-pointer shadow-xs"
+                  >
+                    إضافة النقاط الآن
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

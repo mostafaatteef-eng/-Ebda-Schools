@@ -67,11 +67,25 @@ var SHEETS = {
 function doGet(e) {
   var params = e ? e.parameter : {};
   var action = params.action || 'getAll';
-  var output = { status: 'success', timestamp: new Date().toISOString() };
+  var requestId = 'REQ_' + Utilities.getUuid().substring(0, 8);
+  var output = { 
+    status: 'success', 
+    timestamp: new Date().toISOString(),
+    serverTime: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+    requestId: requestId
+  };
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     initSheetsIfMissing(ss);
+
+    // SECURITY: Disallow authentication attempts via GET
+    if (action === 'login' || params.password || params.pass) {
+      output.status = 'error';
+      output.errorCode = 'AUTH_METHOD_NOT_ALLOWED';
+      output.message = 'تسجيل الدخول وإرسال كلمات المرور عبر GET غير مسموح به لأسباب أمنية. يرجى استخدام طلب POST حصراً.';
+      return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
+    }
 
     if (action === 'getAll') {
       output.data = {
@@ -102,23 +116,19 @@ function doGet(e) {
         parentCommunications: getSheetData(ss, SHEETS.PARENT_COMMUNICATIONS),
         locations: getSheetData(ss, SHEETS.LOCATIONS)
       };
-    } else if (action === 'login') {
-      var username = (params.username || '').trim().toLowerCase();
-      var password = (params.password || '').trim();
-      var authResult = authenticateUser(ss, username, password);
-      
-      if (authResult.success) {
-        output.status = 'success';
-        output.message = 'تم تسجيل الدخول بنجاح';
-        output.user = authResult.user;
-      } else {
-        output.status = 'error';
-        output.message = authResult.message;
-      }
     } else if (action === 'getEmployees') {
       output.data = getSheetData(ss, SHEETS.EMPLOYEES);
     } else if (action === 'getStudents') {
       output.data = getSheetData(ss, SHEETS.STUDENTS);
+    } else if (action === 'getStudentsByParent') {
+      var pPhone = (params.phone || '').trim();
+      var pNationalId = (params.nationalId || '').trim();
+      var allStudents = getSheetData(ss, SHEETS.STUDENTS);
+      output.data = allStudents.filter(function(s) {
+        var matchPhone = pPhone && (String(s.parentPhone || '').includes(pPhone) || String(s.phone || '').includes(pPhone));
+        var matchId = pNationalId && String(s.nationalId || '') === pNationalId;
+        return matchPhone || matchId;
+      });
     } else if (action === 'getAttendance') {
       var allAtt = getSheetData(ss, SHEETS.ATTENDANCE);
       if (params.date) {
@@ -127,7 +137,14 @@ function doGet(e) {
         output.data = allAtt;
       }
     } else if (action === 'getStudentAttendance') {
-      output.data = getSheetData(ss, SHEETS.STUDENT_ATTENDANCE);
+      var stdAtt = getSheetData(ss, SHEETS.STUDENT_ATTENDANCE);
+      if (params.date) {
+        output.data = stdAtt.filter(function(r) { return r.date === params.date; });
+      } else if (params.studentId) {
+        output.data = stdAtt.filter(function(r) { return r.studentId === params.studentId; });
+      } else {
+        output.data = stdAtt;
+      }
     } else if (action === 'getClassAttendance') {
       output.data = getSheetData(ss, SHEETS.CLASS_ATTENDANCE);
     } else if (action === 'getLeaves') {
@@ -141,14 +158,16 @@ function doGet(e) {
     } else if (action === 'getStudentEnrollments') {
       output.data = getSheetData(ss, SHEETS.STUDENT_ENROLLMENTS);
     } else if (action === 'ping') {
-      output.message = 'Server is running and connected successfully!';
+      output.message = 'Server is running securely and connected successfully!';
       output.spreadsheetName = ss.getName();
     } else {
       output.status = 'error';
+      output.errorCode = 'UNKNOWN_ACTION';
       output.message = 'Unknown GET action: ' + action;
     }
   } catch (err) {
     output.status = 'error';
+    output.errorCode = 'SERVER_ERROR';
     output.message = err.toString();
   }
 
@@ -160,7 +179,16 @@ function doGet(e) {
  * Handle POST Requests
  */
 function doPost(e) {
-  var output = { status: 'success', timestamp: new Date().toISOString() };
+  var requestId = 'REQ_' + Utilities.getUuid().substring(0, 8);
+  var output = { 
+    status: 'success', 
+    timestamp: new Date().toISOString(),
+    serverTime: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+    requestId: requestId
+  };
+
+  var lock = LockService.getScriptLock();
+  var lockAcquired = false;
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -177,7 +205,9 @@ function doPost(e) {
 
     var action = postData.action || 'syncAll';
     var payload = postData.data;
+    var callerRole = postData.userRole || (postData.user && postData.user.role) || '';
 
+    // 1. AUTHENTICATION (POST ONLY)
     if (action === 'login') {
       var username = (postData.username || (payload && payload.username) || '').trim().toLowerCase();
       var password = (postData.password || (payload && payload.password) || '').trim();
@@ -187,11 +217,45 @@ function doPost(e) {
         output.status = 'success';
         output.message = 'تم تسجيل الدخول بنجاح';
         output.user = authResult.user;
+        output.token = authResult.token;
+        output.expiresAt = authResult.expiresAt;
       } else {
         output.status = 'error';
+        output.errorCode = 'INVALID_CREDENTIALS';
         output.message = authResult.message;
       }
-    } else if (action === 'syncAll' && payload) {
+      return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 2. SECURITY GUARD: PAYROLL PROTECTION (Admin Only)
+    var isPayrollAction = (
+      action === 'getPayroll' || 
+      action === 'savePayroll' || 
+      action === 'approvePayroll' || 
+      action === 'lockPayroll' || 
+      action === 'generatePayroll'
+    );
+    if (isPayrollAction && callerRole !== 'Admin') {
+      output.status = 'error';
+      output.errorCode = 'FORBIDDEN_PAYROLL_ACCESS';
+      output.message = 'غير مصرح بالوصول إلى بيانات الرواتب أو تعديلها. تتطلب صلاحية مدير النظام (Admin Only).';
+      return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 3. CONCURRENCY: Acquire Lock for batch writes & sensitive mutations
+    var writeActions = [
+      'syncAll', 'bulkSaveAttendance', 'bulkSaveStudents', 'batchSaveStudentEnrollments',
+      'savePayroll', 'approvePayroll', 'lockPayroll', 'saveStudentTransfer'
+    ];
+    if (writeActions.indexOf(action) !== -1) {
+      try {
+        lockAcquired = lock.tryLock(10000); // 10 seconds wait
+      } catch (lockErr) {
+        console.warn('LockService error:', lockErr);
+      }
+    }
+
+    if (action === 'syncAll' && payload) {
       if (payload.employees && Array.isArray(payload.employees)) setSheetData(ss, SHEETS.EMPLOYEES, payload.employees);
       if (payload.attendance && Array.isArray(payload.attendance)) setSheetData(ss, SHEETS.ATTENDANCE, payload.attendance);
       if (payload.leaves && Array.isArray(payload.leaves)) setSheetData(ss, SHEETS.LEAVES, payload.leaves);
@@ -211,7 +275,7 @@ function doPost(e) {
       if (payload.scheduleSubstitutions && Array.isArray(payload.scheduleSubstitutions)) setSheetData(ss, SHEETS.SCHEDULE_SUBSTITUTIONS, payload.scheduleSubstitutions);
       if (payload.lessonInstances && Array.isArray(payload.lessonInstances)) setSheetData(ss, SHEETS.LESSON_INSTANCES, payload.lessonInstances);
       if (payload.lessonContent && Array.isArray(payload.lessonContent)) setSheetData(ss, SHEETS.LESSON_CONTENT, payload.lessonContent);
-      if (payload.payroll && Array.isArray(payload.payroll)) setSheetData(ss, SHEETS.PAYROLL, payload.payroll);
+      if (payload.payroll && Array.isArray(payload.payroll) && callerRole === 'Admin') setSheetData(ss, SHEETS.PAYROLL, payload.payroll);
       if (payload.academicYears && Array.isArray(payload.academicYears)) setSheetData(ss, SHEETS.ACADEMIC_YEARS, payload.academicYears);
       if (payload.studentEnrollments && Array.isArray(payload.studentEnrollments)) setSheetData(ss, SHEETS.STUDENT_ENROLLMENTS, payload.studentEnrollments);
       if (payload.studentTransfers && Array.isArray(payload.studentTransfers)) setSheetData(ss, SHEETS.STUDENT_TRANSFERS, payload.studentTransfers);
@@ -322,6 +386,10 @@ function doPost(e) {
       deleteRecord(ss, SHEETS.LEAVES, 'id', payload.id);
       output.message = 'Leave record deleted successfully!';
     } else if (action === 'saveUser' && payload) {
+      // If saving user password, ensure it is hashed
+      if (payload.password && payload.password.length < 60) {
+        payload.password = hashStringSHA256(payload.password);
+      }
       upsertRecord(ss, SHEETS.USERS, 'username', payload);
       output.message = 'User record saved successfully!';
     } else if (action === 'deleteUser' && payload && payload.id) {
@@ -333,13 +401,28 @@ function doPost(e) {
     } else if (action === 'addAuditLog' && payload) {
       appendRecord(ss, SHEETS.AUDIT_LOGS, payload);
       output.message = 'Audit log recorded!';
+    } else if (action === 'savePayroll' && payload && callerRole === 'Admin') {
+      if (Array.isArray(payload)) {
+        payload.forEach(function(rec) { upsertRecord(ss, SHEETS.PAYROLL, 'id', rec); });
+      } else {
+        upsertRecord(ss, SHEETS.PAYROLL, 'id', payload);
+      }
+      output.message = 'Payroll record saved successfully!';
     } else {
       output.status = 'error';
+      output.errorCode = 'UNKNOWN_ACTION';
       output.message = 'Unknown POST action: ' + action;
     }
   } catch (err) {
     output.status = 'error';
+    output.errorCode = 'SERVER_ERROR';
     output.message = err.toString();
+  } finally {
+    if (lockAcquired) {
+      try {
+        lock.releaseLock();
+      } catch (relErr) {}
+    }
   }
 
   return ContentService.createTextOutput(JSON.stringify(output))
@@ -405,22 +488,45 @@ function authenticateUser(ss, inputUsername, inputPassword) {
   var storedPassword = String(matchedUser.password || matchedUser.Password || matchedUser['كلمة المرور'] || matchedUser['كلمة_السر'] || matchedUser['كلمه السر'] || matchedUser.pass || '').trim();
   var inputHashed = hashStringSHA256(inputPassword);
 
-  var passwordMatches = (storedPassword === inputPassword) || (storedPassword === inputHashed);
+  var isPlainMatch = (storedPassword === inputPassword);
+  var isHashMatch = (storedPassword === inputHashed);
+  var passwordMatches = isPlainMatch || isHashMatch;
 
   if (!passwordMatches) {
     return { success: false, message: 'اسم المستخدم أو كلمة المرور غير صحيحة.' };
   }
 
-  // Update lastLogin in sheet
+  // Auto-migrate plain text password to SHA-256 hash in sheet
   try {
     var sheet = ss.getSheetByName(SHEETS.USERS);
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var passCol = -1;
+    for (var hIdx = 0; hIdx < headers.length; hIdx++) {
+      var hName = String(headers[hIdx]).toLowerCase();
+      if (hName === 'password' || hName === 'كلمة المرور' || hName === 'كلمة_السر' || hName === 'كلمه السر') {
+        passCol = hIdx + 1;
+        break;
+      }
+    }
+
+    if (isPlainMatch && !isHashMatch && passCol > 0 && userRowIndex > 0) {
+      sheet.getRange(userRowIndex, passCol).setValue(inputHashed);
+    }
+
+    // Update lastLogin in sheet
     var lastLoginCol = headers.indexOf('lastLogin') + 1;
     if (lastLoginCol > 0 && userRowIndex > 0) {
       var nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
       sheet.getRange(userRowIndex, lastLoginCol).setValue(nowStr);
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('Error during password migration/lastLogin update:', e);
+  }
+
+  // Generate secure session token
+  var sessionToken = 'NTSS_' + Utilities.getUuid() + '_' + hashStringSHA256(matchedUser.id + '_' + new Date().getTime());
+  var expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  var isDefaultAdmin = (cleanUser === 'admin' && inputPassword === 'admin123');
 
   // Return clean sanitized user without password
   var sanitized = {
@@ -431,10 +537,17 @@ function authenticateUser(ss, inputUsername, inputPassword) {
     status: status,
     department: String(matchedUser.department || matchedUser.Department || matchedUser['القسم'] || ''),
     employeeId: String(matchedUser.employeeId || matchedUser.Employee_ID || ''),
+    mustChangePassword: isDefaultAdmin,
+    sessionToken: sessionToken,
     lastLogin: new Date().toISOString()
   };
 
-  return { success: true, user: sanitized };
+  return { 
+    success: true, 
+    user: sanitized, 
+    token: sessionToken, 
+    expiresAt: expiresAt 
+  };
 }
 
 function hashStringSHA256(text) {

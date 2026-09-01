@@ -1,4 +1,5 @@
 import {
+  AbsenceReasonItem,
   AcademicStage,
   AcademicYear,
   AlertRuleItem,
@@ -343,19 +344,37 @@ export const DEFAULT_SCHEDULE_CONFIG: ScheduleConfig = {
 };
 
 export const DEFAULT_STUDENT_ATTENDANCE_STATUSES: StudentAttendanceStatusConfig[] = [
-  { id: 'STAT_PRES', name: 'حاضر', shortCode: 'P', color: '#10b981', countsAsPresent: true, countsAsAbsent: false, requiresReason: false, requiresTime: false, isActive: true },
-  { id: 'STAT_LATE', name: 'متأخر', shortCode: 'L', color: '#f59e0b', countsAsPresent: true, countsAsAbsent: false, requiresReason: false, requiresTime: true, isActive: true },
-  { id: 'STAT_ABS_NO', name: 'غائب بدون عذر', shortCode: 'A', color: '#ef4444', countsAsPresent: false, countsAsAbsent: true, requiresReason: false, requiresTime: false, isActive: true },
-  { id: 'STAT_ABS_EX', name: 'غائب بعذر مقبول', shortCode: 'E', color: '#6366f1', countsAsPresent: false, countsAsAbsent: true, requiresReason: true, requiresTime: false, isActive: true },
-  { id: 'STAT_PERM', name: 'مأذون له بالانصراف', shortCode: 'X', color: '#8b5cf6', countsAsPresent: true, countsAsAbsent: false, requiresReason: true, requiresTime: true, isActive: true },
-  { id: 'STAT_SICK', name: 'إجازة مرضية معتمدة', shortCode: 'S', color: '#06b6d4', countsAsPresent: false, countsAsAbsent: false, requiresReason: true, requiresTime: false, isActive: true },
-  { id: 'STAT_TRIP', name: 'مشارك في نشاط / مسابقة', shortCode: 'T', color: '#14b8a6', countsAsPresent: true, countsAsAbsent: false, requiresReason: false, requiresTime: false, isActive: true },
+  { id: 'STAT_PRES', name: 'حاضر', shortCode: 'ح', color: '#10b981', textColor: '#065f46', badgeBg: '#d1fae5', countsAsPresent: true, countsAsAbsent: false, isExcused: false, requiresReason: false, requiresTime: false, displayOrder: 1, scope: 'Both', isActive: true },
+  { id: 'STAT_LATE', name: 'متأخر', shortCode: 'ت', color: '#f59e0b', textColor: '#92400e', badgeBg: '#fef3c7', countsAsPresent: true, countsAsAbsent: false, isExcused: false, requiresReason: false, requiresTime: true, displayOrder: 2, scope: 'Both', isActive: true },
+  { id: 'STAT_ABS_NO', name: 'غائب بدون عذر', shortCode: 'غ', color: '#ef4444', textColor: '#991b1b', badgeBg: '#fee2e2', countsAsPresent: false, countsAsAbsent: true, isExcused: false, requiresReason: false, requiresTime: false, displayOrder: 3, scope: 'Both', isActive: true },
+  { id: 'STAT_ABS_EX', name: 'غائب بعذر', shortCode: 'ع', color: '#6366f1', textColor: '#3730a3', badgeBg: '#e0e7ff', countsAsPresent: false, countsAsAbsent: true, isExcused: true, requiresReason: true, requiresTime: false, displayOrder: 4, scope: 'Both', isActive: true },
+  { id: 'STAT_PERM', name: 'مأذون', shortCode: 'م', color: '#8b5cf6', textColor: '#5b21b6', badgeBg: '#ede9fe', countsAsPresent: true, countsAsAbsent: false, isExcused: true, requiresReason: true, requiresTime: true, displayOrder: 5, scope: 'Both', isActive: true },
+  { id: 'STAT_ESCAPE', name: 'هروب من المدرسة', shortCode: 'هـ', color: '#dc2626', textColor: '#7f1d1d', badgeBg: '#fecaca', countsAsPresent: false, countsAsAbsent: true, isExcused: false, requiresReason: false, requiresTime: false, displayOrder: 6, scope: 'Both', isActive: true },
+  { id: 'STAT_SICK', name: 'إجازة مرضية معتمدة', shortCode: 'س', color: '#06b6d4', textColor: '#155e75', badgeBg: '#cffafe', countsAsPresent: false, countsAsAbsent: false, isExcused: true, requiresReason: true, requiresTime: false, displayOrder: 7, scope: 'School', isActive: true },
+  { id: 'STAT_TRIP', name: 'نشاط / مسابقة مدرسية', shortCode: 'ن', color: '#14b8a6', textColor: '#115e59', badgeBg: '#ccfbf1', countsAsPresent: true, countsAsAbsent: false, isExcused: true, requiresReason: false, requiresTime: false, displayOrder: 8, scope: 'Both', isActive: true },
+];
+
+export const DEFAULT_ABSENCE_REASONS: AbsenceReasonItem[] = [
+  { id: 'REA_SICK', name: 'عذر مرضي / تقرير طبي معتمد', category: 'مرضي', isExcused: true, requiresDocument: true, isActive: true },
+  { id: 'REA_FAM', name: 'ظرف عائلي طارئ معتمد من ولي الأمر', category: 'عائلي', isExcused: true, requiresDocument: false, isActive: true },
+  { id: 'REA_TRAV', name: 'سفر مفاجئ بإخطار مسبق', category: 'إذن مسبق', isExcused: true, requiresDocument: true, isActive: true },
+  { id: 'REA_APPT', name: 'موعد حكومي أو فحص رسمي', category: 'طارئ', isExcused: true, requiresDocument: true, isActive: true },
+  { id: 'REA_OTHER_EX', name: 'عذر قهري آخر مقبول لدى إدارة المدرسة', category: 'أخرى', isExcused: true, requiresDocument: false, isActive: true },
+  { id: 'REA_UNEXCUSED', name: 'غياب بدون إبداء أسباب أو تقديم عذر', category: 'أخرى', isExcused: false, requiresDocument: false, isActive: true },
 ];
 
 export const DEFAULT_STUDENT_ATTENDANCE_RULES: StudentAttendanceRules = {
   startTime: '07:45',
   gracePeriodMinutes: 15,
   lateThresholdMinutes: 30,
+  lateCalculationMode: 'from_start',
+  allowManualTime: true,
+  allowRetroactiveEntry: true,
+  maxRetroactiveDays: 3,
+  allowFutureEntry: false,
+  autoSuggestStatus: true,
+  requireAbsenceReason: false,
+  missingRecordOnApproval: 'block',
   allowTeacherTakeAttendance: true,
   allowTeacherEditAttendance: true,
   requireStudentAffairsApproval: false,

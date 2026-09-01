@@ -142,6 +142,8 @@ export interface User {
   lastLogin?: string;
   avatar?: string;
   pin?: string;
+  sessionToken?: string;
+  mustChangePassword?: boolean;
 }
 
 export interface Employee {
@@ -393,10 +395,12 @@ export interface Student {
 export type AttendanceDayStatus = 'Open' | 'UnderReview' | 'Approved' | 'Locked';
 
 export interface AttendanceDay {
-  id: string; // "DAY-2026-10-13"
+  id: string; // "DAY-2026-10-13" or "DAY-2026-10-13-AY1"
   date: string; // YYYY-MM-DD
   academicYearId: string;
+  academicYearName?: string;
   termId?: string;
+  termName?: string;
   dayName: string;
   status: AttendanceDayStatus;
   totalStudentsCount: number;
@@ -404,12 +408,19 @@ export interface AttendanceDay {
   presentCount: number;
   lateCount: number;
   absentCount: number;
+  excusedCount?: number;
   unrecordedCount: number;
+  openedAt?: string;
+  openedBy?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
   approvedBy?: string;
   approvedAt?: string;
   lockedBy?: string;
   lockedAt?: string;
   lockNotes?: string;
+  version?: number;
 }
 
 export type StudentAttendanceStatus =
@@ -432,25 +443,42 @@ export interface StudentAttendanceRecord {
   studentId: string;
   studentCode?: string;
   studentName: string;
+  enrollmentId?: string;
   academicYearId?: string;
+  academicYearName?: string;
   termId?: string;
+  termName?: string;
   stage: string;
   grade: string;
+  gradeId?: string;
   classroom: string;
+  classroomId?: string;
   date: string; // YYYY-MM-DD
   dayName: string;
   status: StudentAttendanceStatus;
+  statusId?: string;
   checkInTime?: string; // HH:mm
   checkOutTime?: string; // HH:mm
   lateMinutes?: number;
   absenceReason?: string;
+  absenceReasonId?: string;
+  absenceReasonText?: string;
   absenceCategory?: string;
   notes?: string;
+  source?: 'Manual' | 'Fingerprint' | 'Barcode' | 'TeacherApp' | 'AutoSystem';
   recordedBy?: string;
   recordedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  lockedBy?: string;
+  lockedAt?: string;
+  updatedBy?: string;
   updatedAt?: string;
+  version?: number;
+  isArchived?: boolean;
 }
 
+export type StudentSchoolAttendance = StudentAttendanceRecord;
 export type SchoolAttendanceRecord = StudentAttendanceRecord;
 
 export interface ClassAttendanceRecord {
@@ -458,6 +486,7 @@ export interface ClassAttendanceRecord {
   studentId: string;
   studentCode?: string;
   studentName?: string;
+  enrollmentId?: string;
   scheduleItemId: string;
   lessonInstanceId?: string;
   academicYearId?: string;
@@ -471,15 +500,54 @@ export interface ClassAttendanceRecord {
   teacherName: string;
   grade: string;
   classroom: string;
+  classroomId?: string;
+  subjectName?: string;
   status: 'حاضر' | 'غائب' | 'متأخر' | 'مأذون' | 'خرج أثناء الحصة' | string;
+  statusId?: string;
   lateMinutes?: number;
   notes?: string;
+  mismatchFlag?: 'NONE' | 'SCHOOL_PRESENT_CLASS_ABSENT' | 'SCHOOL_ABSENT_CLASS_PRESENT';
   recordedBy?: string;
   recordedAt?: string;
   takenBy?: string;
   takenAt?: string;
   createdAt?: string;
   updatedAt?: string;
+  version?: number;
+}
+
+export type ClassAttendance = ClassAttendanceRecord;
+
+export interface AttendanceException {
+  id: string;
+  date: string;
+  academicYearId?: string;
+  studentId: string;
+  studentName: string;
+  studentCode?: string;
+  grade: string;
+  classroom: string;
+  type:
+    | 'MISMATCH_PRESENT_ABSENT'
+    | 'MISMATCH_ABSENT_PRESENT'
+    | 'UNRECORDED_SCHOOL'
+    | 'REPEAT_UNEXCUSED_ABSENCE'
+    | 'EXCESSIVE_LATENESS'
+    | 'SCHOOL_ABSENT_CLASS_PRESENT'
+    | 'SCHOOL_PRESENT_CLASS_ABSENT'
+    | 'CLASS_TRUANCY';
+  severity: 'WARNING' | 'ERROR' | 'CRITICAL';
+  description: string;
+  periodNumber?: number;
+  subject?: string;
+  teacherName?: string;
+  schoolStatus?: string;
+  classStatus?: string;
+  status: 'OPEN' | 'RESOLVED' | 'DISMISSED';
+  resolution?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt: string;
 }
 
 /* =========================================================================
@@ -965,19 +1033,41 @@ export interface ScheduleConfig {
 export interface StudentAttendanceStatusConfig {
   id: string;
   name: string;
-  shortCode: string;
+  shortCode: string; // e.g. "ح", "ت", "غ", "ع", "م", "هـ"
   color: string;
+  textColor?: string;
+  badgeBg?: string;
   countsAsPresent: boolean;
   countsAsAbsent: boolean;
+  isExcused?: boolean;
   requiresReason: boolean;
   requiresTime: boolean;
+  displayOrder?: number;
+  scope?: 'School' | 'Class' | 'Both';
+  isActive: boolean;
+}
+
+export interface AbsenceReasonItem {
+  id: string;
+  name: string;
+  category: 'مرضي' | 'عائلي' | 'طارئ' | 'إذن مسبق' | 'أخرى';
+  isExcused: boolean;
+  requiresDocument?: boolean;
   isActive: boolean;
 }
 
 export interface StudentAttendanceRules {
-  startTime: string; // "07:30"
+  startTime: string; // "07:30" or "08:00"
   gracePeriodMinutes: number; // 15
   lateThresholdMinutes: number; // 30
+  lateCalculationMode?: 'from_start' | 'after_grace'; // from_start (e.g. 08:16 -> 16m) or after_grace (08:16 -> 1m)
+  allowManualTime?: boolean;
+  allowRetroactiveEntry?: boolean;
+  maxRetroactiveDays?: number;
+  allowFutureEntry?: boolean;
+  autoSuggestStatus?: boolean;
+  requireAbsenceReason?: boolean;
+  missingRecordOnApproval?: 'block' | 'convertToAbsent' | 'allowNotRecorded';
   allowTeacherTakeAttendance: boolean;
   allowTeacherEditAttendance: boolean;
   requireStudentAffairsApproval: boolean;
@@ -1245,6 +1335,7 @@ export interface SystemSettings {
   gracePeriodMinutes: number; // 15
   standardDailyHours: number; // 7
   weekendDays: string[]; // ["الجمعة", "السبت"]
+  lateCalculationMode?: 'from_start' | 'after_grace'; // Mode A (default): from official start; Mode B: after grace period
   
   // الإجازات
   annualLeaveAllowance: number;
@@ -1333,6 +1424,8 @@ export interface AuditLogEntry {
     | 'EMPLOYEE'
     | 'STUDENT'
     | 'STUDENT_ATTENDANCE'
+    | 'CLASS_ATTENDANCE'
+    | 'ATTENDANCE_DAY'
     | 'BEHAVIOR'
     | 'SCHEDULE'
     | 'LESSON'

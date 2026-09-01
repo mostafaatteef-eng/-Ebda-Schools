@@ -91,16 +91,33 @@ export function formatDateKey(d: Date): string {
 }
 
 /**
- * Calculates attendance metrics based on rules
+ * Unified Core Calculation: Computes Late, Early Leave, Working Hours, and Overtime
+ * Supporting Employee schedule overrides and Configurable Late Calculation Mode
  */
+export interface AttendanceCalculationInput {
+  employee?: Partial<Employee> | null;
+  dateStr: string;
+  checkIn?: string;
+  checkOut?: string;
+  settings: SystemSettings;
+  statusOverride?: AttendanceStatus;
+  isLeave?: boolean;
+}
+
 export function calculateAttendanceMetrics(
-  checkIn: string,
-  checkOut: string,
-  officialStartTime: string = '09:00',
-  officialEndTime: string = '17:00',
+  checkIn: string = '',
+  checkOut: string = '',
+  officialStartTime: string = '07:30',
+  officialEndTime: string = '14:30',
   gracePeriodMinutes: number = 15,
-  standardDailyHours: number = 8
-) {
+  standardDailyHours: number = 7,
+  lateCalculationMode: 'from_start' | 'after_grace' = 'from_start'
+): {
+  workingHours: number;
+  lateMinutes: number;
+  earlyLeaveMinutes: number;
+  overtimeHours: number;
+} {
   let workingHours = 0;
   let lateMinutes = 0;
   let earlyLeaveMinutes = 0;
@@ -112,9 +129,15 @@ export function calculateAttendanceMetrics(
   const endMinutes = timeStringToMinutes(officialEndTime);
 
   // Late calculation
+  // Mode A (default): if checkIn is past (start + grace), late is measured from start time (e.g., 09:00 start, 15m grace, 09:16 in = 16 mins late)
+  // Mode B: if checkIn is past (start + grace), late is measured after grace period only (e.g. 09:16 in = 1 min late)
   if (checkIn && inMinutes > 0) {
     if (inMinutes > startMinutes + gracePeriodMinutes) {
-      lateMinutes = inMinutes - startMinutes;
+      if (lateCalculationMode === 'after_grace') {
+        lateMinutes = inMinutes - (startMinutes + gracePeriodMinutes);
+      } else {
+        lateMinutes = inMinutes - startMinutes;
+      }
     } else {
       lateMinutes = 0; // within grace period
     }
@@ -125,20 +148,93 @@ export function calculateAttendanceMetrics(
     const diffMinutes = outMinutes - inMinutes;
     workingHours = parseFloat((diffMinutes / 60).toFixed(2));
 
-    if (outMinutes < endMinutes) {
-      earlyLeaveMinutes = endMinutes - outMinutes;
+    if (endMinutes > 0 && outMinutes < endMinutes) {
+      earlyLeaveMinutes = Math.max(0, endMinutes - outMinutes);
     }
 
     if (workingHours > standardDailyHours) {
       overtimeHours = parseFloat((workingHours - standardDailyHours).toFixed(2));
+    } else if (endMinutes > 0 && outMinutes > endMinutes) {
+      // Overtime based on official shift end
+      const diffEnd = outMinutes - endMinutes;
+      if (diffEnd >= 30) {
+        overtimeHours = parseFloat((diffEnd / 60).toFixed(2));
+      }
     }
   }
 
   return {
     workingHours,
-    lateMinutes,
-    earlyLeaveMinutes,
-    overtimeHours
+    lateMinutes: Math.max(0, lateMinutes),
+    earlyLeaveMinutes: Math.max(0, earlyLeaveMinutes),
+    overtimeHours: Math.max(0, overtimeHours)
+  };
+}
+
+/**
+ * Unified Attendance Record Builder:
+ * Single Source of Truth for creating or updating Attendance Records
+ */
+export function buildUnifiedAttendanceRecord(
+  input: AttendanceCalculationInput
+): AttendanceRecord {
+  const { employee, dateStr, checkIn = '', checkOut = '', settings, statusOverride, isLeave } = input;
+
+  const startTime = employee?.workStartTime || settings.officialStartTime || '07:30';
+  const endTime = employee?.workEndTime || settings.officialEndTime || '14:30';
+  const graceMinutes = settings.gracePeriodMinutes ?? 15;
+  const standardHours = employee?.workingHours || settings.standardDailyHours || 7;
+  const lateMode = settings.lateCalculationMode || 'from_start';
+  const weekendDays = employee?.daysOff && employee.daysOff.length > 0 ? employee.daysOff : (settings.weekendDays || ['الجمعة', 'السبت']);
+
+  const metrics = calculateAttendanceMetrics(
+    checkIn,
+    checkOut,
+    startTime,
+    endTime,
+    graceMinutes,
+    standardHours,
+    lateMode
+  );
+
+  let status: AttendanceStatus = statusOverride || 'حاضر';
+
+  if (isLeave) {
+    status = 'إجازة';
+  } else if (!statusOverride) {
+    if (!checkIn) {
+      if (isWeekend(dateStr, weekendDays)) {
+        status = 'عطلة أسبوعية';
+      } else {
+        status = 'غائب';
+      }
+    } else if (metrics.lateMinutes > 0) {
+      status = 'متأخر';
+    } else {
+      status = 'حاضر';
+    }
+  }
+
+  // If checkIn was present but no checkOut yet, default working hours to shift standard until checkout occurs
+  const calculatedWorkingHours = (checkIn && !checkOut) ? standardHours : metrics.workingHours;
+
+  return {
+    id: `ATT-${employee?.id || 'EMP'}-${dateStr}`,
+    employeeId: employee?.id || '',
+    employeeName: employee?.name || '',
+    department: employee?.department || '',
+    date: dateStr,
+    dayName: getArabicDayName(dateStr),
+    checkIn,
+    checkOut,
+    workingHours: calculatedWorkingHours,
+    lateMinutes: metrics.lateMinutes,
+    earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+    overtimeHours: metrics.overtimeHours,
+    status,
+    checkInTimestamp: checkIn ? new Date().toISOString() : undefined,
+    checkOutTimestamp: checkOut ? new Date().toISOString() : undefined,
+    updatedAt: new Date().toISOString(),
   };
 }
 
@@ -150,11 +246,13 @@ export function determineAttendanceStatus(
   checkIn: string,
   lateMinutes: number,
   isLeave: boolean,
-  settings: SystemSettings
+  settings: SystemSettings,
+  employeeDaysOff?: string[]
 ): AttendanceStatus {
   if (isLeave) return 'إجازة';
 
-  const isWknd = isWeekend(dateStr, settings.weekendDays);
+  const weekendDays = employeeDaysOff && employeeDaysOff.length > 0 ? employeeDaysOff : settings.weekendDays;
+  const isWknd = isWeekend(dateStr, weekendDays);
   if (!checkIn) {
     if (isWknd) return 'عطلة أسبوعية';
     return 'غائب';
@@ -170,7 +268,11 @@ export function determineAttendanceStatus(
 /**
  * Get days count for a given year & month (1-indexed month)
  */
-export function getDaysInMonth(year: number, month: number): { dayNumber: number; dateStr: string; dayName: string; isWeekend: boolean }[] {
+export function getDaysInMonth(
+  year: number,
+  month: number,
+  weekendDays: string[] = ['الجمعة', 'السبت']
+): { dayNumber: number; dateStr: string; dayName: string; isWeekend: boolean }[] {
   const daysInMonth = new Date(year, month, 0).getDate();
   const result = [];
   for (let d = 1; d <= daysInMonth; d++) {
@@ -181,10 +283,62 @@ export function getDaysInMonth(year: number, month: number): { dayNumber: number
       dayNumber: d,
       dateStr,
       dayName,
-      isWeekend: isWeekend(dateStr)
+      isWeekend: isWeekend(dateStr, weekendDays)
     });
   }
   return result;
+}
+
+/**
+ * Computes the dynamic list of financial/academic years based on actual data
+ */
+export function deriveDynamicYears(
+  attendanceRecords: AttendanceRecord[] = [],
+  employees: Employee[] = [],
+  settings?: SystemSettings
+): number[] {
+  const yearsSet = new Set<number>();
+  const currentYear = new Date().getFullYear();
+  yearsSet.add(currentYear);
+  yearsSet.add(currentYear - 1);
+  yearsSet.add(currentYear + 1);
+
+  attendanceRecords.forEach(a => {
+    if (a.date) {
+      const y = parseInt(a.date.slice(0, 4), 10);
+      if (!isNaN(y) && y >= 2020 && y <= 2040) yearsSet.add(y);
+    }
+  });
+
+  employees.forEach(e => {
+    if (e.hireDate) {
+      const y = parseInt(e.hireDate.slice(0, 4), 10);
+      if (!isNaN(y) && y >= 2020 && y <= 2040) yearsSet.add(y);
+    }
+  });
+
+  return Array.from(yearsSet).sort((a, b) => a - b);
+}
+
+/**
+ * Helper to calculate cross-year leave days overlapping with a specific year
+ */
+export function getLeaveDaysForYear(leave: LeaveRecord, targetYear: number): number {
+  if (!leave.startDate || !leave.endDate) return leave.daysCount || 0;
+  
+  const start = new Date(leave.startDate + 'T00:00:00');
+  const end = new Date(leave.endDate + 'T00:00:00');
+  const yearStart = new Date(targetYear, 0, 1);
+  const yearEnd = new Date(targetYear, 11, 31);
+
+  if (end < yearStart || start > yearEnd) return 0;
+
+  const effectiveStart = start < yearStart ? yearStart : start;
+  const effectiveEnd = end > yearEnd ? yearEnd : end;
+
+  const diffTime = effectiveEnd.getTime() - effectiveStart.getTime();
+  const days = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  return Math.max(1, days);
 }
 
 /**

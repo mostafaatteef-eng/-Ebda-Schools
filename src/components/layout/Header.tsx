@@ -15,6 +15,7 @@ import { SyncStatus, SystemSettings, User as UserType } from '../../types';
 import { getCairoCurrentTimeString, getEgyptianDayName, formatEgyptianDate, getCairoCurrentDate } from '../../utils/egyptianTime';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { GlobalSearchModal } from '../search/GlobalSearchModal';
+import { SyncDetailsModal } from '../sync/SyncDetailsModal';
 
 interface HeaderProps {
   currentUser: UserType | null;
@@ -41,6 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [cairoTime, setCairoTime] = useState<string>(getCairoCurrentTimeString());
   const [settings, setSettings] = useState<SystemSettings>(() => propSettings || storageService.getSettings());
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = storageService.subscribe(() => {
@@ -170,16 +172,19 @@ export const Header: React.FC<HeaderProps> = ({
             onNavigate={tab => onNavigate && onNavigate(tab)}
           />
 
-          {/* Refresh Data Button */}
+          {/* Refresh Data Button & Queue Indicator */}
           <button
             id="btn-refresh-data"
-            onClick={handleQuickSync}
+            onClick={() => setIsSyncModalOpen(true)}
             disabled={isSyncing}
             className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-teal-50 hover:text-[#008e8b] border border-slate-200 hover:border-teal-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer disabled:opacity-50"
-            title="مزامنة وتحديث البيانات مع Google Sheets"
+            title="حالة المزامنة وقائمة العمليات السحابية"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-[#008e8b]' : ''}`} />
-            <span className="hidden sm:inline">{isSyncing ? 'جارٍ المزامنة...' : 'مزامنة سحابية'}</span>
+            <span className="hidden sm:inline">{isSyncing ? 'جارٍ المزامنة...' : 'المزامنة السحابية'}</span>
+            {syncStatus.hasPendingChanges && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="توجد تغييرات بانتظار المزامنة" />
+            )}
           </button>
 
           {/* User Card Pill */}
@@ -222,6 +227,12 @@ export const Header: React.FC<HeaderProps> = ({
           if (entity === 'EMPLOYEE' && onNavigate) onNavigate('employees');
           if (entity === 'BEHAVIOR' && onNavigate) onNavigate('behavior');
         }}
+      />
+
+      {/* Cloud Sync & Queue Details Modal */}
+      <SyncDetailsModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
       />
     </>
   );

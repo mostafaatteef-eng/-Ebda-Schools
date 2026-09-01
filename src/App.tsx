@@ -31,6 +31,7 @@ import { SettingsView } from './components/settings/SettingsView';
 import { MasterDataManagerView } from './components/masterdata/MasterDataManagerView';
 import { BackupExportView } from './components/backup/BackupExportView';
 import { LoginView } from './components/auth/LoginView';
+import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -258,6 +259,16 @@ export default function App() {
           </div>
         </main>
       </div>
+
+      {/* Force Change Password Modal for initial/default accounts */}
+      {currentUser && currentUser.mustChangePassword && (
+        <ForceChangePasswordModal
+          user={currentUser}
+          onPasswordChanged={updatedUser => {
+            setCurrentUser(updatedUser);
+          }}
+        />
+      )}
     </div>
   );
 }
