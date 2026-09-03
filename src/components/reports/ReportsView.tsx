@@ -1,447 +1,749 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  AlertTriangle,
-  Banknote,
-  BookOpen,
+  AlertCircle,
+  Bookmark,
   Building,
   Calendar,
-  Clock,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Columns,
   Download,
-  FileCheck,
   FileSpreadsheet,
   FileText,
   Filter,
   GraduationCap,
+  History,
+  Layers,
+  Lock,
   Printer,
+  RotateCcw,
   Search,
-  Shield,
+  SlidersHorizontal,
   Sparkles,
-  UserCheck,
+  Trash2,
   Users,
+  X,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
-import { AttendanceRecord, Employee, LeaveRecord, Student, SystemSettings, User } from '../../types';
+import { SystemSettings, User } from '../../types';
+import {
+  ReportColumn,
+  ReportDefinition,
+  ReportModule,
+  ReportQueryResult,
+  SavedReportFilter,
+} from '../../types_extended';
+import { ReportService } from '../../services/reportService';
 import { storageService } from '../../services/storageService';
-import { formatEgyptianCurrency, formatEgyptianDate, getCairoCurrentDate, getEgyptianDayName } from '../../utils/egyptianTime';
+import { formatEgyptianDate, getCairoCurrentDate } from '../../utils/egyptianTime';
 
 interface ReportsViewProps {
-  employees: Employee[];
-  attendance: AttendanceRecord[];
-  leaves: LeaveRecord[];
-  settings: SystemSettings;
   currentUser: User | null;
+  initialReportKey?: string;
+  initialFilters?: Record<string, any>;
 }
 
-type ReportCategory =
-  | 'student_attendance'
-  | 'student_behavior'
-  | 'teacher_attendance'
-  | 'payroll_summary'
-  | 'employee_statement'
-  | 'leaves';
-
 export const ReportsView: React.FC<ReportsViewProps> = ({
-  employees,
-  attendance,
-  leaves,
-  settings,
   currentUser,
+  initialReportKey,
+  initialFilters,
 }) => {
-  const [activeCategory, setActiveCategory] = useState<ReportCategory>('student_attendance');
-  const [selectedDate, setSelectedDate] = useState<string>(getCairoCurrentDate());
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [selectedGrade, setSelectedGrade] = useState<string>('ALL');
-  const [selectedClassroom, setSelectedClassroom] = useState<string>('ALL');
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('ALL');
-  const [selectedEmpId, setSelectedEmpId] = useState<string>(employees[0]?.id || '');
-
-  const students = storageService.getStudents();
-  const studentAttendance = storageService.getStudentAttendance();
-  const violations = storageService.getBehaviorViolations();
-  const payrollRecords = storageService.getPayrollRecords();
-  const stages = settings.stages || [];
-
-  // Filtered Student Attendance Data
-  const studentAttData = studentAttendance.filter(a => {
-    const matchDate = a.date === selectedDate;
-    const matchGrade = selectedGrade === 'ALL' || a.grade === selectedGrade;
-    const matchClass = selectedClassroom === 'ALL' || a.classroom === selectedClassroom;
-    return matchDate && matchGrade && matchClass;
+  const isAdmin = currentUser?.role === 'Admin';
+  const availableDefs = ReportService.REPORT_DEFINITIONS.filter(def => {
+    if (def.adminOnly && !isAdmin) return false;
+    return true;
   });
 
-  // Filtered Teacher/Staff Attendance
-  const staffAttData = attendance.filter(a => {
-    const matchDate = a.date === selectedDate;
-    const matchDept = selectedDepartment === 'ALL' || a.department === selectedDepartment;
-    return matchDate && matchDept;
+  // Module / Tab Selection
+  const [selectedModule, setSelectedModule] = useState<ReportModule>('STUDENTS');
+  const [activeReportKey, setActiveReportKey] = useState<string>(
+    initialReportKey || availableDefs.find(d => d.module === 'STUDENTS')?.key || 'student_directory'
+  );
+
+  // Filters State
+  const activeDef = availableDefs.find(d => d.key === activeReportKey) || availableDefs[0];
+  const [filterValues, setFilterValues] = useState<Record<string, any>>(() => {
+    if (initialFilters) return initialFilters;
+    const initial: Record<string, any> = {};
+    activeDef?.availableFilters.forEach(f => {
+      initial[f.key] = f.defaultValue !== undefined ? f.defaultValue : '';
+    });
+    return initial;
   });
 
-  // Filtered Payroll Data
-  const monthPayrollData = payrollRecords.filter(p => p.month === selectedMonth && p.year === selectedYear);
+  // Pagination & Column Selection State
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [activeColumns, setActiveColumns] = useState<string[]>(
+    activeDef?.availableColumns.filter(c => c.isDefaultVisible).map(c => c.key) || []
+  );
+  const [showColumnModal, setShowColumnModal] = useState<boolean>(false);
 
-  // Print Report
-  const handlePrint = () => {
-    window.print();
-  };
+  // Saved Filters
+  const [savedFilters, setSavedFilters] = useState<SavedReportFilter[]>([]);
+  const [newFilterName, setNewFilterName] = useState<string>('');
+  const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
 
-  // Export Excel
-  const handleExportExcel = () => {
-    const wb = XLSX.utils.book_new();
+  // Result state
+  const [queryResult, setQueryResult] = useState<ReportQueryResult | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-    if (activeCategory === 'student_attendance') {
-      const data = studentAttData.map((s, idx) => ({
-        'م': idx + 1,
-        'كود الطالب': s.studentCode,
-        'اسم الطالب': s.studentName,
-        'الصف': s.grade,
-        'الفصل': s.classroom,
-        'التاريخ': s.date,
-        'الحالة': s.status,
-        'وقت الحضور': s.checkInTime || '—',
-        'التأخير': s.lateMinutes ? `${s.lateMinutes} دقيقة` : '—',
-        'ملاحظات / العذر': s.absenceReason || s.notes || '—',
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      XLSX.utils.book_append_sheet(wb, ws, 'تقرير_حضور_الطلاب');
-      XLSX.writeFile(wb, `تقرير_حضور_الطلاب_${selectedDate}.xlsx`);
-    } else if (activeCategory === 'student_behavior') {
-      const data = violations.map((v, idx) => ({
-        'م': idx + 1,
-        'اسم الطالب': v.studentName,
-        'كود الطالب': v.studentCode,
-        'الصف والفصل': `${v.grade} (${v.classroom})`,
-        'المخالفة': v.violationName,
-        'الدرجة': v.severity,
-        'النقاط المحسومة': v.pointsDeducted,
-        'التاريخ': v.date,
-        'الإجراء المتخذ': v.actionTaken || '—',
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      XLSX.utils.book_append_sheet(wb, ws, 'تقرير_الانضباط_والسلوك');
-      XLSX.writeFile(wb, `تقرير_الانضباط_السلوكي_${selectedDate}.xlsx`);
-    } else if (activeCategory === 'payroll_summary') {
-      const data = monthPayrollData.map((p, idx) => ({
-        'م': idx + 1,
-        'اسم الموظف': p.employeeName,
-        'القسم': p.department,
-        'الوظيفة': p.jobTitle,
-        'الأساسي': p.basicSalary,
-        'إجمالي الاستحقاق': p.totalGross,
-        'إجمالي الاستقطاع': p.totalDeductions,
-        'صافي الراتب': p.netSalary,
-        'الحالة': p.status === 'Paid' ? 'مصروف' : 'معتمد',
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      XLSX.utils.book_append_sheet(wb, ws, 'مسير_الرواتب');
-      XLSX.writeFile(wb, `مسير_الرواتب_${selectedMonth}_${selectedYear}.xlsx`);
-    } else {
-      const data = staffAttData.map((a, idx) => ({
-        'م': idx + 1,
-        'كود الموظف': a.employeeId,
-        'اسم الموظف': a.employeeName,
-        'القسم': a.department,
-        'التاريخ': a.date,
-        'الحضور': a.checkIn || '—',
-        'الانصراف': a.checkOut || '—',
-        'الحالة': a.status,
-        'دقائق التأخير': a.lateMinutes || 0,
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      XLSX.utils.book_append_sheet(wb, ws, 'حضور_المعلمين');
-      XLSX.writeFile(wb, `حضور_المعلمين_${selectedDate}.xlsx`);
+  // Load Saved Filters on mount or report change
+  useEffect(() => {
+    if (currentUser?.id && activeDef) {
+      const filters = ReportService.getSavedFilters(activeDef.key, currentUser.id);
+      setSavedFilters(filters);
+
+      // Check if there is a default saved filter
+      const def = filters.find(f => f.isDefault);
+      if (def && !initialFilters) {
+        try {
+          const parsed = JSON.parse(def.filtersJson);
+          setFilterValues(parsed);
+        } catch {}
+      }
+    }
+  }, [activeReportKey, currentUser?.id]);
+
+  // Sync active columns when report definition changes
+  useEffect(() => {
+    if (activeDef) {
+      setActiveColumns(activeDef.availableColumns.filter(c => c.isDefaultVisible).map(c => c.key));
+      const initVals: Record<string, any> = {};
+      activeDef.availableFilters.forEach(f => {
+        initVals[f.key] = f.defaultValue !== undefined ? f.defaultValue : '';
+      });
+      setFilterValues(initVals);
+      setPage(1);
+    }
+  }, [activeReportKey]);
+
+  // Fetch Report Data
+  const runReport = () => {
+    if (!activeDef) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = ReportService.executeReport(
+        activeDef.key,
+        filterValues,
+        page,
+        pageSize,
+        undefined,
+        activeColumns,
+        currentUser
+      );
+      setQueryResult(result);
+    } catch (err: any) {
+      setError(err.message || 'فشل في تشغيل التقرير');
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  useEffect(() => {
+    runReport();
+  }, [activeReportKey, page, pageSize, activeColumns]);
+
+  // Filter input change handler
+  const handleFilterChange = (key: string, val: any) => {
+    setFilterValues(prev => ({ ...prev, [key]: val }));
+  };
+
+  // Reset Filters to default
+  const handleResetFilters = () => {
+    if (!activeDef) return;
+    const resetVals: Record<string, any> = {};
+    activeDef.availableFilters.forEach(f => {
+      resetVals[f.key] = f.defaultValue !== undefined ? f.defaultValue : '';
+    });
+    setFilterValues(resetVals);
+    setPage(1);
+  };
+
+  // Save Filter action
+  const handleSaveFilter = () => {
+    if (!newFilterName.trim() || !currentUser?.id || !activeDef) return;
+    ReportService.saveFilter(activeDef.key, newFilterName.trim(), filterValues, currentUser.id, false);
+    setSavedFilters(ReportService.getSavedFilters(activeDef.key, currentUser.id));
+    setNewFilterName('');
+    setShowSaveModal(false);
+  };
+
+  const handleDeleteSavedFilter = (filterId: string) => {
+    if (!currentUser?.id || !activeDef) return;
+    ReportService.deleteSavedFilter(filterId, currentUser.id);
+    setSavedFilters(ReportService.getSavedFilters(activeDef.key, currentUser.id));
+  };
+
+  const handleApplySavedFilter = (sf: SavedReportFilter) => {
+    try {
+      const parsed = JSON.parse(sf.filtersJson);
+      setFilterValues(parsed);
+      setPage(1);
+    } catch {}
+  };
+
+  // Module filter tabs definition
+  const moduleTabs: { id: ReportModule; label: string; icon: any; adminOnly?: boolean }[] = [
+    { id: 'STUDENTS', label: 'شؤون الطلاب والقيد', icon: GraduationCap },
+    { id: 'ACADEMIC', label: 'الجدول والحصص والواجبات', icon: Calendar },
+    { id: 'BEHAVIOR', label: 'الانضباط والخدمة الاجتماعية', icon: Sparkles },
+    { id: 'HR', label: 'شؤون المعلمين والموظفين', icon: Users },
+    { id: 'PAYROLL', label: 'الرواتب والمسير المالي', icon: Lock, adminOnly: true },
+  ];
+
+  const visibleModuleTabs = moduleTabs.filter(m => !m.adminOnly || isAdmin);
+  const reportsInCurrentModule = availableDefs.filter(d => d.module === selectedModule);
+
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 print:hidden">
+      {/* Header Banner */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-teal-500 text-white flex items-center justify-center shadow-md shadow-teal-500/20">
               <FileText className="w-6 h-6" />
             </div>
-            <span>مركز التقارير المدرسية والكشوفات الإحصائية الرسمية</span>
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            تقارير حضور وغياب الطلاب والمعلمين، لائحة السلوك، مسير الرواتب، وسجلات الإجازات
-          </p>
+            <div>
+              <h1 className="text-xl font-bold text-slate-800">مركز التقارير والإحصائيات المدرسية الشامل</h1>
+              <p className="text-xs text-slate-500 mt-1">
+                استخراج وطباعة كشوفات وبيانات الطلاب، الحضور والغياب، الدوام، وجداول الحصص باحترافية
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Global Export Actions */}
+        <div className="flex items-center gap-2 w-full md:w-auto">
           <button
-            onClick={handlePrint}
-            className="text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-xs transition-colors flex items-center gap-2"
+            onClick={() => ReportService.exportToExcel(activeDef.key, filterValues, activeColumns, currentUser)}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
           >
-            <Printer className="w-4 h-4" />
-            <span>طباعة التقرير (PDF)</span>
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>تصدير إكسيل (Excel)</span>
           </button>
           <button
-            onClick={handleExportExcel}
-            className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-2xl shadow-md transition-colors flex items-center gap-2"
+            onClick={() => ReportService.exportToCsv(activeDef.key, filterValues, activeColumns, currentUser)}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
           >
             <Download className="w-4 h-4" />
-            <span>تصدير Excel (.xlsx)</span>
+            <span>CSV</span>
+          </button>
+          <button
+            onClick={() => ReportService.triggerPrintReport(activeDef.key, filterValues, activeColumns, currentUser)}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
+          >
+            <Printer className="w-4 h-4" />
+            <span>طباعة (PDF)</span>
           </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white p-2 rounded-2xl border border-slate-200 flex flex-wrap items-center gap-1.5 print:hidden text-xs font-bold">
-        {[
-          { id: 'student_attendance', label: 'تقرير حضور الطلاب', icon: GraduationCap },
-          { id: 'student_behavior', label: 'تقرير السلوك والانضباط', icon: Shield },
-          { id: 'teacher_attendance', label: 'كشف حضور المعلمين والموظفين', icon: Users },
-          { id: 'payroll_summary', label: 'كشف مسير الرواتب المعتمد', icon: Banknote },
-          { id: 'leaves', label: 'سجل الإجازات والأذونات', icon: Calendar },
-        ].map(tab => {
+      {/* Module Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+        {visibleModuleTabs.map(tab => {
           const Icon = tab.icon;
-          const isActive = activeCategory === tab.id;
+          const isSelected = selectedModule === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveCategory(tab.id as ReportCategory)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ${
-                isActive ? 'bg-[#008e8b] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-50'
+              onClick={() => {
+                setSelectedModule(tab.id);
+                const firstInMod = availableDefs.find(d => d.module === tab.id);
+                if (firstInMod) setActiveReportKey(firstInMod.key);
+              }}
+              className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-xs font-bold transition-all shrink-0 ${
+                isSelected
+                  ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80'
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className={`w-4 h-4 ${isSelected ? 'text-teal-400' : 'text-slate-400'}`} />
               <span>{tab.label}</span>
+              {tab.adminOnly && (
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-rose-500/20 text-rose-300 font-medium">
+                  إدارة
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* Filters Bar */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-4 print:hidden text-xs">
-        {activeCategory !== 'payroll_summary' && (
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-700">التاريخ:</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-mono text-slate-800"
-            />
-          </div>
-        )}
-
-        {activeCategory === 'student_attendance' && (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-700">الصف:</span>
-              <select
-                value={selectedGrade}
-                onChange={e => setSelectedGrade(e.target.value)}
-                className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-              >
-                <option value="ALL">جميع الصفوف</option>
-                {stages.flatMap(s => s.grades).map(g => (
-                  <option key={g.name} value={g.name}>{g.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-700">الفصل:</span>
-              <select
-                value={selectedClassroom}
-                onChange={e => setSelectedClassroom(e.target.value)}
-                className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-              >
-                <option value="ALL">جميع الفصول</option>
-                {['1/1', '1/2', '1/3', '2/1', '2/2', '3/1', '3/2'].map(c => (
-                  <option key={c} value={c}>فصل {c}</option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
-
-        {activeCategory === 'payroll_summary' && (
+      {/* Report Selector Dropdown & Saved Filters Bar */}
+      <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-700">الشهر:</span>
-              <select
-                value={selectedMonth}
-                onChange={e => setSelectedMonth(Number(e.target.value))}
-                className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
-                  <option key={m} value={m}>شهر {m}</option>
+            <span className="text-xs font-bold text-slate-500">اختر التقرير:</span>
+            <select
+              value={activeReportKey}
+              onChange={e => setActiveReportKey(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-w-[280px]"
+            >
+              {reportsInCurrentModule.map(r => (
+                <option key={r.key} value={r.key}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Saved Filters Dropdown */}
+            {savedFilters.length > 0 && (
+              <div className="relative group">
+                <button className="flex items-center gap-2 px-3 py-2 bg-teal-50 text-teal-700 hover:bg-teal-100 rounded-xl text-xs font-medium transition-colors">
+                  <Bookmark className="w-3.5 h-3.5" />
+                  <span>الفلاتر المحفوظة ({savedFilters.length})</span>
+                </button>
+                <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-20">
+                  <div className="text-[11px] font-bold text-slate-400 px-2 py-1 mb-1 border-b border-slate-100">
+                    نماذج الفلاتر الخاصة بك
+                  </div>
+                  {savedFilters.map(sf => (
+                    <div
+                      key={sf.id}
+                      className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-50 rounded-xl text-xs"
+                    >
+                      <button
+                        onClick={() => handleApplySavedFilter(sf)}
+                        className="text-right text-slate-700 font-medium hover:text-teal-700 flex-1 truncate"
+                      >
+                        {sf.name}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSavedFilter(sf.id)}
+                        className="text-slate-400 hover:text-rose-500 p-1"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowSaveModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition-colors"
+              title="حفظ الفلاتر الحالية لسرعة الاستدعاء"
+            >
+              <Bookmark className="w-3.5 h-3.5" />
+              <span>حفظ الفلتر</span>
+            </button>
+
+            <button
+              onClick={() => setShowColumnModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition-colors"
+            >
+              <Columns className="w-3.5 h-3.5" />
+              <span>تخصيص الأعمدة ({activeColumns.length})</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic Filters Form */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 items-end">
+          {activeDef?.availableFilters.map(filterDef => {
+            const currentVal = filterValues[filterDef.key] !== undefined ? filterValues[filterDef.key] : '';
+
+            if (filterDef.type === 'select') {
+              let options = filterDef.options;
+              if (!options) {
+                if (filterDef.key === 'grade') {
+                  const settings = storageService.getSettings();
+                  options = [
+                    { value: 'ALL', label: 'جميع الصفوف' },
+                    ...(settings.grades || []).map(g => {
+                      const val = typeof g === 'string' ? g : (g.name || g.shortName || g.id);
+                      return { value: val, label: val };
+                    }),
+                  ];
+                } else if (filterDef.key === 'classroom') {
+                  const settings = storageService.getSettings();
+                  options = [
+                    { value: 'ALL', label: 'جميع الفصول' },
+                    ...(settings.classrooms || []).map(c => {
+                      const val = typeof c === 'string' ? c : (c.displayName || c.classroomNumber || c.id);
+                      return { value: val, label: val };
+                    }),
+                  ];
+                } else if (filterDef.key === 'department') {
+                  const settings = storageService.getSettings();
+                  options = [
+                    { value: 'ALL', label: 'جميع الأقسام' },
+                    ...(settings.departments || []).map(d => {
+                      const val = typeof d === 'string' ? d : (d.name || d.id);
+                      return { value: val, label: val };
+                    }),
+                  ];
+                } else if (filterDef.key === 'subject') {
+                  const settings = storageService.getSettings();
+                  options = [
+                    { value: 'ALL', label: 'جميع المواد' },
+                    ...(settings.subjects || []).map(s => {
+                      const val = typeof s === 'string' ? s : (s.name || s.shortName || s.id);
+                      return { value: val, label: val };
+                    }),
+                  ];
+                } else if (filterDef.key === 'teacherName') {
+                  const emps = storageService.getEmployees();
+                  options = [
+                    { value: 'ALL', label: 'جميع المعلمين' },
+                    ...emps.map(e => ({ value: e.name, label: e.name })),
+                  ];
+                }
+              }
+
+              return (
+                <div key={filterDef.key} className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-500">{filterDef.label}</label>
+                  <select
+                    value={currentVal}
+                    onChange={e => handleFilterChange(filterDef.key, e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                  >
+                    {(options || []).map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+
+            if (filterDef.type === 'date') {
+              return (
+                <div key={filterDef.key} className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-500">{filterDef.label}</label>
+                  <input
+                    type="date"
+                    value={currentVal}
+                    onChange={e => handleFilterChange(filterDef.key, e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              );
+            }
+
+            if (filterDef.type === 'month') {
+              return (
+                <div key={filterDef.key} className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-500">{filterDef.label}</label>
+                  <select
+                    value={currentVal}
+                    onChange={e => handleFilterChange(filterDef.key, e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                  >
+                    {[
+                      { v: '1', l: 'يناير' },
+                      { v: '2', l: 'فبراير' },
+                      { v: '3', l: 'مارس' },
+                      { v: '4', l: 'أبريل' },
+                      { v: '5', l: 'مايو' },
+                      { v: '6', l: 'يونيو' },
+                      { v: '7', l: 'يوليو' },
+                      { v: '8', l: 'أغسطس' },
+                      { v: '9', l: 'سبتمبر' },
+                      { v: '10', l: 'أكتوبر' },
+                      { v: '11', l: 'نوفمبر' },
+                      { v: '12', l: 'ديسمبر' },
+                    ].map(m => (
+                      <option key={m.v} value={m.v}>
+                        {m.l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+
+            return (
+              <div key={filterDef.key} className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-500">{filterDef.label}</label>
+                <input
+                  type={filterDef.type === 'number' ? 'number' : 'text'}
+                  value={currentVal}
+                  placeholder={filterDef.placeholder}
+                  onChange={e => handleFilterChange(filterDef.key, e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            );
+          })}
+
+          {/* Filter Action Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={runReport}
+              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>تطبيق الفلتر</span>
+            </button>
+            <button
+              onClick={handleResetFilters}
+              className="p-2.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors"
+              title="إعادة التعيين"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Error Notice */}
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center gap-3 text-rose-700 text-xs font-semibold">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Report Data Table Card */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+        {/* Table Summary & Stats */}
+        <div className="p-4 bg-slate-50/70 border-b border-slate-200/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3 font-semibold text-slate-600">
+            <span>التقرير: <strong className="text-slate-900">{activeDef?.name}</strong></span>
+            <span className="text-slate-300">|</span>
+            <span>إجمالي السجلات: <strong className="text-teal-700">{queryResult?.totalRows || 0}</strong></span>
+          </div>
+
+          {/* Page size selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500">عرض في الصفحة:</span>
+            <select
+              value={pageSize}
+              onChange={e => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-700"
+            >
+              <option value={25}>25 سجل</option>
+              <option value={50}>50 سجل</option>
+              <option value={100}>100 سجل</option>
+            </select>
+          </div>
+        </div>
+
+        {/* The Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-right text-xs">
+            <thead>
+              <tr className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200">
+                {queryResult?.columns.map(col => (
+                  <th
+                    key={col.key}
+                    style={{ width: col.width }}
+                    className={`py-3.5 px-4 ${
+                      col.align === 'center' ? 'text-center' : col.align === 'left' ? 'text-left' : 'text-right'
+                    }`}
+                  >
+                    {col.label}
+                  </th>
                 ))}
-              </select>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={queryResult?.columns.length || 5} className="py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                      <span>جاري معالجة وتجهيز بيانات التقرير...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : queryResult?.rows.length === 0 ? (
+                <tr>
+                  <td colSpan={queryResult?.columns.length || 5} className="py-12 text-center text-slate-400">
+                    لا توجد سجلات تطابق الفلاتر المحددة حالياً.
+                  </td>
+                </tr>
+              ) : (
+                queryResult?.rows.map((row, rIdx) => (
+                  <tr key={rIdx} className="hover:bg-slate-50/80 transition-colors">
+                    {queryResult.columns.map(col => {
+                      const val = row[col.key];
+                      const isStatus = col.key === 'status';
+                      return (
+                        <td
+                          key={col.key}
+                          className={`py-3 px-4 font-medium text-slate-700 ${
+                            col.align === 'center' ? 'text-center' : col.align === 'left' ? 'text-left' : 'text-right'
+                          }`}
+                        >
+                          {isStatus ? (
+                            <span
+                              className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                                val === 'حاضر' || val === 'نشط' || val === 'منفذة' || val === 'معتمد' || val === 'مصروف ومحول'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : val === 'متأخر' || val === 'احتياط'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}
+                            >
+                              {val}
+                            </span>
+                          ) : val !== undefined && val !== null ? (
+                            val
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Bar */}
+        {queryResult && queryResult.totalPages > 1 && (
+          <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-4 text-xs">
+            <div className="text-slate-500">
+              الصفحة <strong>{queryResult.page}</strong> من <strong>{queryResult.totalPages}</strong> (إجمالي {queryResult.totalRows} نتيجة)
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-700">السنة:</span>
-              <select
-                value={selectedYear}
-                onChange={e => setSelectedYear(Number(e.target.value))}
-                className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono"
+            <div className="flex items-center gap-1.5">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none"
               >
-                {[2024, 2025, 2026, 2027].map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              {Array.from({ length: Math.min(5, queryResult.totalPages) }, (_, i) => {
+                const pNum = i + 1;
+                return (
+                  <button
+                    key={pNum}
+                    onClick={() => setPage(pNum)}
+                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${
+                      page === pNum
+                        ? 'bg-teal-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-50 border border-slate-200'
+                    }`}
+                  >
+                    {pNum}
+                  </button>
+                );
+              })}
+              <button
+                disabled={page >= queryResult.totalPages}
+                onClick={() => setPage(p => Math.min(queryResult.totalPages, p + 1))}
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Printable Report Sheet */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 sm:p-8 space-y-6 print:border-none print:shadow-none print:p-0">
-        {/* Report Official Header */}
-        <div className="border-b-2 border-slate-900 pb-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">{settings.schoolName}</h1>
-            <p className="text-xs text-slate-600 mt-0.5">جمهورية مصر العربية • الإدارة العامة للتعليم والموارد البشرية</p>
-          </div>
-          <div className="text-left text-xs text-slate-600 font-mono">
-            <div>تاريخ الاستخراج: {formatEgyptianDate(selectedDate)}</div>
-            <div>المستخدم: {currentUser?.fullName || 'مدير النظام'}</div>
-          </div>
-        </div>
-
-        {/* Dynamic Table Content */}
-        {activeCategory === 'student_attendance' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-right border-collapse">
-              <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
-                <tr>
-                  <th className="p-3">كود الطالب</th>
-                  <th className="p-3">اسم الطالب</th>
-                  <th className="p-3">الصف الدراسي</th>
-                  <th className="p-3">الفصل</th>
-                  <th className="p-3">الحالة</th>
-                  <th className="p-3">وقت الحضور</th>
-                  <th className="p-3">التأخير</th>
-                  <th className="p-3">بيان العذر والملاحظات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {studentAttData.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="p-8 text-center text-slate-400">
-                      لا توجد سجلات حضور طلاب مسجلة في هذا التاريخ
-                    </td>
-                  </tr>
-                ) : (
-                  studentAttData.map(s => (
-                    <tr key={s.id}>
-                      <td className="p-3 font-mono font-bold">{s.studentCode}</td>
-                      <td className="p-3 font-bold text-slate-800">{s.studentName}</td>
-                      <td className="p-3">{s.grade}</td>
-                      <td className="p-3 font-semibold">{s.classroom}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
-                          s.status === 'حاضر' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                        }`}>
-                          {s.status}
-                        </span>
-                      </td>
-                      <td className="p-3 font-mono">{s.checkInTime || '—'}</td>
-                      <td className="p-3 font-mono">{s.lateMinutes ? `${s.lateMinutes} دقيقة` : '—'}</td>
-                      <td className="p-3 text-slate-600">{s.absenceReason || s.notes || '—'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {activeCategory === 'student_behavior' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-right border-collapse">
-              <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
-                <tr>
-                  <th className="p-3">كود الطالب</th>
-                  <th className="p-3">اسم الطالب</th>
-                  <th className="p-3">الصف والفصل</th>
-                  <th className="p-3">المخالفة</th>
-                  <th className="p-3">الدرجة</th>
-                  <th className="p-3">حسم النقاط</th>
-                  <th className="p-3">الإجراء المتخذ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {violations.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-400">
-                      سجل المخالفات خالٍ تماماً
-                    </td>
-                  </tr>
-                ) : (
-                  violations.map(v => (
-                    <tr key={v.id}>
-                      <td className="p-3 font-mono font-bold">{v.studentCode}</td>
-                      <td className="p-3 font-bold text-slate-800">{v.studentName}</td>
-                      <td className="p-3">{v.grade} ({v.classroom})</td>
-                      <td className="p-3 font-bold text-rose-700">{v.violationName}</td>
-                      <td className="p-3">{v.severity}</td>
-                      <td className="p-3 font-mono font-bold text-rose-600">-{v.pointsDeducted} نقطة</td>
-                      <td className="p-3 text-slate-700">{v.actionTaken || '—'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {activeCategory === 'payroll_summary' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-right border-collapse">
-              <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
-                <tr>
-                  <th className="p-3">الموظف / المعلم</th>
-                  <th className="p-3">القسم</th>
-                  <th className="p-3">الأساسي</th>
-                  <th className="p-3">إجمالي الاستحقاق</th>
-                  <th className="p-3">إجمالي الاستقطاع</th>
-                  <th className="p-3">صافي الراتب المصروف</th>
-                  <th className="p-3">الحالة</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {monthPayrollData.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-400">
-                      لا يوجد مسير رواتب مسجل لشهر {selectedMonth}/{selectedYear}
-                    </td>
-                  </tr>
-                ) : (
-                  monthPayrollData.map(p => (
-                    <tr key={p.id}>
-                      <td className="p-3 font-bold text-slate-800">{p.employeeName}</td>
-                      <td className="p-3 text-slate-600">{p.department}</td>
-                      <td className="p-3 font-mono">{formatEgyptianCurrency(p.basicSalary)}</td>
-                      <td className="p-3 font-mono font-bold text-blue-700">{formatEgyptianCurrency(p.totalGross)}</td>
-                      <td className="p-3 font-mono font-bold text-rose-600">-{formatEgyptianCurrency(p.totalDeductions)}</td>
-                      <td className="p-3 font-mono font-bold text-emerald-700">{formatEgyptianCurrency(p.netSalary)}</td>
-                      <td className="p-3 font-semibold">{p.status === 'Paid' ? 'مصروف' : 'معتمد'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Printable Signatures */}
-        <div className="pt-8 mt-8 border-t border-slate-200 grid grid-cols-2 text-center text-xs font-bold text-slate-700">
-          <div>
-            <p className="mb-8">توقيع مسؤول شؤون الطلاب والموارد البشرية:</p>
-            <div className="w-36 h-0.5 bg-slate-300 mx-auto"></div>
-          </div>
-          <div>
-            <p className="mb-8">اعتماد ناظر / مدير المدرسة:</p>
-            <div className="w-36 h-0.5 bg-slate-300 mx-auto"></div>
+      {/* Save Filter Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800">حفظ نموذج الفلتر الحالي</h3>
+              <button onClick={() => setShowSaveModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">
+              اكتب اسماً مألوفاً لتسهيل استدعاء نفس خيارات الفلترة المحددة بضغطة زر لاحقاً:
+            </p>
+            <input
+              type="text"
+              value={newFilterName}
+              placeholder="مثال: غياب طلاب الصف الأول بدون عذر"
+              onChange={e => setNewFilterName(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleSaveFilter}
+                className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+              >
+                حفظ النموذج
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Customize Columns Modal */}
+      {showColumnModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-800">تخصيص أعمدة الجدول المعروضة</h3>
+              <button onClick={() => setShowColumnModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">
+              حدد الأعمدة التي ترغب بظهورها في شاشة العرض وملفات التصدير والطباعة:
+            </p>
+            <div className="flex-1 overflow-y-auto space-y-2 py-2">
+              {activeDef?.availableColumns.map(col => {
+                const isChecked = activeColumns.includes(col.key);
+                return (
+                  <label
+                    key={col.key}
+                    className="flex items-center gap-3 p-2.5 hover:bg-slate-50 rounded-xl border border-slate-100 cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setActiveColumns(prev => [...prev, col.key]);
+                        } else {
+                          setActiveColumns(prev => prev.filter(k => k !== col.key));
+                        }
+                      }}
+                      className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+                    />
+                    <span className="text-xs font-semibold text-slate-700">{col.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <button
+                onClick={() =>
+                  setActiveColumns(activeDef?.availableColumns.map(c => c.key) || [])
+                }
+                className="text-xs font-bold text-teal-600 hover:underline"
+              >
+                تحديد جميع الأعمدة
+              </button>
+              <button
+                onClick={() => setShowColumnModal(false)}
+                className="px-5 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors"
+              >
+                إغلاق واعتماد
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

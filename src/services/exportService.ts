@@ -174,6 +174,27 @@ export class ExportService {
   }
 
   /**
+   * Export Leaves to Excel
+   */
+  public static exportLeavesToExcel(leaves: LeaveRecord[], fileName: string = 'سجل_الإجازات') {
+    const data = leaves.map((l, idx) => ({
+      'م': idx + 1,
+      'رقم الموظف': l.employeeId,
+      'اسم الموظف': l.employeeName,
+      'القسم': l.department,
+      'نوع الإجازة': l.leaveType,
+      'تاريخ البدء': l.startDate,
+      'تاريخ الانتهاء': l.endDate,
+      'عدد الأيام': l.daysCount,
+      'الحالة': l.status,
+      'السبب': l.reason,
+      'المعتمد': l.approvedBy || '-',
+      'تاريخ التقديم': l.createdAt,
+    }));
+    this.exportToExcel(data, fileName, 'الإجازات');
+  }
+
+  /**
    * Generic Excel Export Helper for custom tables & daily records
    */
   public static exportToExcel(data: Record<string, any>[], fileName: string = 'Export', sheetName: string = 'Sheet1') {

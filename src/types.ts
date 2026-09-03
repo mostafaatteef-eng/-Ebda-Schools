@@ -31,6 +31,7 @@ export type PermissionKey =
   | 'classAttendance.view'
   | 'classAttendance.create'
   | 'classAttendance.edit'
+  | 'classAttendance.manageOwnLessons'
   | 'academicYears.view'
   | 'academicYears.create'
   | 'academicYears.edit'
@@ -49,6 +50,8 @@ export type PermissionKey =
   | 'teachers.edit'
   | 'teachers.delete'
   | 'teachers.import'
+  | 'teacherPortal.access'
+  | 'teacherSchedule.viewOwn'
   | 'teacherAttendance.view'
   | 'teacherAttendance.create'
   | 'teacherAttendance.edit'
@@ -72,13 +75,29 @@ export type PermissionKey =
   | 'parentCommunication.create'
   | 'schedule.view'
   | 'schedule.manage'
+  | 'schedule.publish'
+  | 'schedule.cancelLesson'
   | 'schedule.exportPdf'
   | 'schedule.manageSubstitution'
   | 'schedule.viewConflicts'
   | 'lessonContent.view'
   | 'lessonContent.create'
   | 'lessonContent.edit'
+  | 'lessonContent.editOwn'
+  | 'lessonContent.publish'
+  | 'lessonResources.manage'
+  | 'homework.create'
+  | 'homework.editOwn'
+  | 'homework.publish'
   | 'parentPortal.access'
+  | 'parentPortal.preview'
+  | 'parentStudents.viewOwn'
+  | 'parentAttendance.viewOwn'
+  | 'parentSchedule.viewOwn'
+  | 'parentLessonContent.viewOwn'
+  | 'parentHomework.viewOwn'
+  | 'parentBehavior.viewOwn'
+  | 'parentNotifications.viewOwn'
   | 'payroll.view'
   | 'payroll.manage'
   | 'payroll.approve'
@@ -130,6 +149,7 @@ export interface User {
   id: string;
   username: string;
   fullName: string;
+  name?: string; // compatibility alias for fullName
   role: UserRole;
   employeeId?: string;
   studentIds?: string[]; // For Parent accounts linked to one or more students
@@ -148,6 +168,7 @@ export interface User {
 
 export interface Employee {
   id: string; // EMP001, EMP002, etc.
+  employeeNumber?: string;
   name: string;
   nationalId?: string;
   department: string;
@@ -244,6 +265,7 @@ export interface AcademicYear {
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   status: AcademicYearStatus;
+  isActive?: boolean;
   isCurrent?: boolean;
   isDefault?: boolean;
   isLocked?: boolean;
@@ -360,7 +382,7 @@ export interface Student {
   nationalId?: string; // الرقم القومي
   gender: Gender;
   birthDate?: string; // YYYY-MM-DD
-  stage: string; // المرحلة (ثانوي / إعدادي / ابتدائي)
+  stage?: string; // المرحلة (ثانوي / إعدادي / ابتدائي)
   stageId?: string;
   grade: string; // الصف الدراسي (الصف الأول الثانوي...)
   gradeId?: string;
@@ -369,7 +391,7 @@ export interface Student {
   classroomId?: string;
   classroomNumber?: string;
   section?: string;
-  academicYear: string; // العام الدراسي (2025/2026)
+  academicYear?: string; // العام الدراسي (2025/2026)
   academicYearId?: string;
   status: StudentStatus;
   enrollmentDate?: string; // تاريخ الالتحاق
@@ -377,15 +399,15 @@ export interface Student {
   
   // بيانات ولي الأمر
   parentId?: string; // معرف حساب ولي الأمر إن وجد
-  parentName: string;
-  relationship: string; // أب، أم، وصي
-  parentPhone: string;
+  parentName?: string;
+  relationship?: string; // أب، أم، وصي
+  parentPhone?: string;
   parentEmail?: string;
   address?: string;
   
   initialBehaviorScore?: number; // درجة السلوك الافتراضية
   notes?: string;
-  createdAt: string;
+  createdAt?: string;
   updatedAt?: string;
 }
 
@@ -460,6 +482,8 @@ export interface StudentAttendanceRecord {
   checkInTime?: string; // HH:mm
   checkOutTime?: string; // HH:mm
   lateMinutes?: number;
+  excused?: boolean;
+  isExcused?: boolean;
   absenceReason?: string;
   absenceReasonId?: string;
   absenceReasonText?: string;
@@ -616,6 +640,8 @@ export interface BehaviorCase {
   severity: string;
   assignedTo: string;
   assignedToName: string;
+  specialistName?: string;
+  parentContacted?: boolean;
   summary: string;
   resolution?: string;
   resolutionSummary?: string;
@@ -664,6 +690,9 @@ export interface BehaviorScoreLedger {
   sourceType: 'positive_behavior' | 'violation' | 'adjustment' | 'annual_reset' | string;
   sourceId?: string;
   points: number;
+  pointsAwarded?: number;
+  grade?: string;
+  classroom?: string;
   balanceAfter: number;
   academicYearId?: string;
   date: string;
@@ -715,6 +744,7 @@ export interface BehaviorViolation {
   violationTypeId?: string;
   violationName: string;
   severity?: SeverityLevel;
+  degree?: string; // alias for severity
   pointsDeducted: number;
   recordedBy: string; // المعلم / المشرف
   subject?: string; // المادة أو الحصة إن وجدت
@@ -740,62 +770,118 @@ export interface BehaviorScoreRule {
 /* =========================================================================
  * 4. الجدول الدراسي والمحتوى التعليمي (Schedule & Lesson Content Engine)
  * ========================================================================= */
+export interface TeacherProfile {
+  id: string; // TP-EMP001
+  employeeId: string;
+  userId?: string;
+  teacherCode?: string;
+  specialization?: string;
+  assignedGradeIds?: string[];
+  assignedSubjectIds?: string[];
+  maxWeeklyPeriods?: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TeacherSubject {
+  id: string;
+  teacherId: string;
+  subjectId: string;
+  academicYearId: string;
+  gradeId?: string;
+  isActive: boolean;
+  createdAt?: string;
+}
+
+export type ScheduleItemStatus = 'Active' | 'Draft' | 'Suspended' | 'Archived' | 'Published';
+
 export interface ScheduleItem {
   id: string;
-  academicYear: string;
+  academicYear?: string;
   academicYearId?: string;
   term?: string; // الترم الأول / الترم الثاني
   termId?: string;
   stage?: string;
+  stageId?: string;
   grade: string;
+  gradeId?: string;
   classroom: string;
-  dayName: string; // الأحد، الإثنين...
-  dayOfWeek?: string;
+  classroomId?: string;
+  dayName?: string; // الأحد، الإثنين...
+  dayOfWeek?: string; // 'الأحد' | 'الإثنين' | 'الثلاثاء' | 'الأربعاء' | 'الخميس' | string
   periodNumber: number; // رقم الحصة (1, 2, 3...)
-  periodId?: number;
+  periodId?: number | string;
   startTime: string; // "08:00"
   endTime: string; // "08:45"
   subject: string; // الرياضيات، اللغة العربية...
   subjectId?: string;
-  teacherId?: string;
+  teacherId: string; // Teacher / Employee ID
   teacherName?: string;
   roomNumber?: string;
+  room?: string;
   roomId?: string;
   locationId?: string;
+  isSubstituted?: boolean;
+  substituteTeacherName?: string;
+  isCancelled?: boolean;
+  validFrom?: string; // YYYY-MM-DD
+  validTo?: string; // YYYY-MM-DD
+  status?: ScheduleItemStatus;
   isActive?: boolean;
   notes?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+  version?: number;
 }
 
 export type ClassPeriodSchedule = ScheduleItem;
 
+export type SubstitutionStatus = 'Pending' | 'Approved' | 'Active' | 'Completed' | 'Cancelled';
+
 export interface ScheduleSubstitution {
   id: string; // "SUB-2026-10-13-SCH01"
+  academicYearId?: string;
+  termId?: string;
   date: string; // YYYY-MM-DD
   scheduleItemId: string;
+  lessonInstanceId?: string;
   periodNumber: number;
   dayOfWeek: string;
   originalTeacherId: string;
   originalTeacherName: string;
   substituteTeacherId: string;
   substituteTeacherName: string;
+  subjectId?: string;
   subject: string;
+  gradeId?: string;
   grade: string;
+  classroomId?: string;
   classroom: string;
+  reasonId?: string;
   reason: string;
+  reasonText?: string;
   notes?: string;
-  status?: 'PENDING' | 'APPROVED' | 'CANCELLED' | 'ACTIVE' | string;
+  status: SubstitutionStatus | string;
   assignedBy?: string;
   createdBy?: string;
   createdAt: string;
+  approvedBy?: string;
+  approvedAt?: string;
   updatedAt?: string;
 }
 
 export type LessonDeliveryStatus = 
   | 'Scheduled' 
+  | 'InProgress'
   | 'Delivered' 
+  | 'PartiallyDelivered'
   | 'Partially Delivered' 
   | 'Cancelled' 
   | 'Substituted' 
+  | 'NotRecorded'
   | 'Not Recorded';
 
 export interface LessonInstance {
@@ -805,27 +891,45 @@ export interface LessonInstance {
   academicYear?: string;
   termId?: string;
   term?: string;
-  date: string;
+  date: string; // YYYY-MM-DD
   periodNumber: number;
-  teacherId: string;
-  teacherName: string;
+  periodId?: number | string;
+  gradeId?: string;
+  grade: string;
+  classroomId?: string;
+  classroom: string;
   subjectId?: string;
   subject: string;
-  grade: string;
-  classroom: string;
+  plannedTeacherId: string;
+  plannedTeacherName?: string;
+  actualTeacherId: string;
+  actualTeacherName?: string;
+  teacherId?: string; // compatibility
+  teacherName?: string; // compatibility
+  substitutionId?: string;
   deliveryStatus: LessonDeliveryStatus;
+  status?: LessonDeliveryStatus;
+  cancelReason?: string;
+  partialReason?: string;
+  startedAt?: string;
+  completedAt?: string;
+  recordedBy?: string;
+  recordedAt?: string;
   lessonTitle?: string;
   lessonDescription?: string;
   bookPages?: string;
   homework?: string;
   links?: LessonLink[];
-  recordedBy?: string;
-  recordedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
 
-export type ScheduleConflictType = 'TEACHER_DOUBLE_BOOKING' | 'CLASSROOM_DOUBLE_BOOKING' | 'ROOM_DOUBLE_BOOKING' | 'MAX_SUBJECT_EXCEEDED';
+export type ScheduleConflictType = 
+  | 'TEACHER_DOUBLE_BOOKING' 
+  | 'CLASSROOM_DOUBLE_BOOKING' 
+  | 'ROOM_DOUBLE_BOOKING' 
+  | 'MAX_SUBJECT_EXCEEDED'
+  | 'SUBSTITUTE_TEACHER_CONFLICT';
 
 export interface ScheduleConflict {
   type: ScheduleConflictType;
@@ -834,6 +938,14 @@ export interface ScheduleConflict {
   conflictingItemIds: string[];
   dayName: string;
   periodNumber: number;
+}
+
+export interface ScheduleConflictResult {
+  hasConflicts: boolean;
+  hasBlockingConflicts: boolean;
+  hasWarnings: boolean;
+  conflicts: ScheduleConflict[];
+  messages: string[];
 }
 
 export interface LocationItem {
@@ -858,6 +970,8 @@ export interface ConflictRuleConfig {
   maxConsecutiveTeacherPeriods?: number;
   warnOnSubjectRepetitionPerDay?: boolean;
   warnOnHeavySubjectsInEndPeriods?: boolean;
+  warnDuplicateSubjectPerDay?: boolean;
+  maxSubjectPeriodsPerDay?: number;
 }
 
 export interface LessonLink {
@@ -867,25 +981,123 @@ export interface LessonLink {
   type: 'drive' | 'youtube' | 'pdf' | 'presentation' | 'assignment' | 'teams' | 'other';
 }
 
+export type LessonResourceType = 
+  | 'PDF' 
+  | 'Google Drive' 
+  | 'YouTube' 
+  | 'Presentation' 
+  | 'Website' 
+  | 'Assignment' 
+  | 'Other';
+
+export interface LessonResource {
+  id: string;
+  lessonContentId?: string;
+  lessonInstanceId?: string;
+  homeworkId?: string;
+  title: string;
+  resourceType: LessonResourceType | string;
+  url: string;
+  description?: string;
+  displayOrder?: number;
+  isVisibleToParent: boolean;
+  isVisibleToStudent: boolean;
+  createdAt: string;
+}
+
+export type LessonContentStatus = 'Draft' | 'Published' | 'Archived';
+
 export interface LessonContent {
   id: string;
-  scheduleId?: string;
   lessonInstanceId?: string;
+  scheduleItemId?: string;
+  scheduleId?: string;
+  academicYearId?: string;
+  termId?: string;
   date: string; // YYYY-MM-DD
   periodNumber: number;
   teacherId: string;
   teacherName: string;
+  subjectId?: string;
   subject: string;
+  gradeId?: string;
   grade: string;
+  classroomId?: string;
   classroom: string;
-  lessonTitle: string;
+  title?: string;
+  lessonTitle?: string; // alias
+  lessonUnit?: string;
+  lessonChapter?: string;
+  summary?: string;
+  summaryCovered?: string; // alias
   lessonDescription?: string;
-  summaryCovered?: string;
   bookPages?: string;
+  bookPageFrom?: number;
+  bookPageTo?: number;
+  learningObjectives?: string;
+  notes?: string;
+  internalNotes?: string;
+  parentVisibleSummary?: string;
+  isVisibleToParent?: boolean;
+  hasHomework?: boolean;
   homework?: string;
-  links: LessonLink[];
+  homeworkTitle?: string;
+  homeworkDescription?: string;
+  homeworkDueDate?: string;
+  homeworkDueDays?: number;
+  homeworkId?: string;
+  status?: LessonContentStatus;
+  resources?: LessonResource[];
+  links?: LessonLink[];
   deliveryStatus?: LessonDeliveryStatus;
+  publishedAt?: string;
+  createdBy?: string;
   createdAt: string;
+  updatedBy?: string;
+  updatedAt?: string;
+  version?: number;
+}
+
+export type HomeworkStatus = 'Draft' | 'Published' | 'Archived';
+export type HomeworkSubmissionStatus = 'Assigned' | 'Submitted' | 'Graded' | 'Late' | 'Missing';
+
+export interface Homework {
+  id: string;
+  lessonContentId?: string;
+  lessonInstanceId?: string;
+  scheduleItemId?: string;
+  academicYearId?: string;
+  termId?: string;
+  teacherId: string;
+  teacherName: string;
+  subjectId?: string;
+  subject: string;
+  gradeId?: string;
+  grade: string;
+  classroomId?: string;
+  classroom: string;
+  targetStudentId?: string;
+  title: string;
+  description: string;
+  instructions?: string;
+  assignedDate: string; // YYYY-MM-DD
+  dueDate: string; // YYYY-MM-DD
+  dueTime?: string; // "23:59"
+  maxScore?: number;
+  bookPages?: string;
+  questions?: string;
+  link?: string;
+  links?: LessonLink[];
+  attachmentUrl?: string;
+  resources?: LessonResource[];
+  status?: HomeworkStatus;
+  isVisibleToParent?: boolean;
+  isVisibleToStudent?: boolean;
+  isArchived?: boolean;
+  createdBy?: string;
+  createdAt: string;
+  updatedBy?: string;
+  updatedAt?: string;
 }
 
 /* =========================================================================
@@ -915,15 +1127,19 @@ export interface PayrollRecord {
   basicSalary: number;
   allowances: number;
   incentives: number;
+  bonuses?: number;
   overtimeHours: number;
   overtimeAmount: number;
   totalGross: number; // إجمالي المستحقات
+  grossSalary?: number; // alias for totalGross
   
   // الاستقطاعات
   absentDaysCount: number;
   absenceDeductions: number;
+  absenceDeduction?: number;
   totalLateMinutes: number;
   lateDeductions: number;
+  lateDeduction?: number;
   loanDeductions: number;
   otherDeductions: number;
   totalDeductions: number; // إجمالي الاستقطاعات
@@ -1028,6 +1244,7 @@ export interface ScheduleConfig {
   periods: SchedulePeriodItem[];
   breakTimes: ScheduleBreakItem[];
   nonStudyDays: string[]; // ["الجمعة", "السبت"]
+  periodTimes?: Array<{ startTime: string; endTime: string }>;
 }
 
 export interface StudentAttendanceStatusConfig {
@@ -1152,15 +1369,31 @@ export interface DeductionTypeItem {
 export interface ParentPortalSettings {
   showAttendance: boolean;
   showCheckInTime: boolean;
+  showCheckOutTime: boolean;
   showLateMinutes: boolean;
+  showAttendanceRate: boolean;
+  showAbsenceReason: boolean;
+  showClassAttendance: boolean;
   showBehavior: boolean;
   showBehaviorPoints: boolean;
+  showBehaviorScore: boolean;
+  showPositiveBehavior: boolean;
+  showBehaviorCaseStatus: boolean;
   showViolationDescription: boolean;
   showTeacherName: boolean;
+  showSubstituteTeacherName: boolean;
   showLessonContent: boolean;
   showHomework: boolean;
   showLearningLinks: boolean;
   showWeeklySchedule: boolean;
+  homeworkUpcomingDays: number;
+  enableNotifications: boolean;
+  notifyOnAbsence: boolean;
+  notifyOnLate: boolean;
+  notifyOnHomework: boolean;
+  notifyOnBehaviorViolation: boolean;
+  notifyOnPositiveBehavior: boolean;
+  notifyOnScheduleSubstitution: boolean;
 }
 
 export interface TeacherPortalSettings {

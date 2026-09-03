@@ -1,649 +1,466 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AlertCircle,
   BookOpen,
   Calendar,
-  CheckCircle,
+  CheckCircle2,
   Clock,
-  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
+  Filter,
   GraduationCap,
+  Layers,
   Plus,
-  Save,
+  Printer,
   Search,
+  Send,
   Trash2,
-  User,
+  UserCheck,
+  Users,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
-import { LessonContent, ScheduleItem } from '../../types';
+import {
+  Homework,
+  LessonContent,
+  LessonDeliveryStatus,
+  ScheduleItem,
+  ScheduleSubstitution,
+  User,
+} from '../../types';
 import { storageService } from '../../services/storageService';
+import { ScheduleService, TeacherDayContext } from '../../services/scheduleService';
 import {
   formatEgyptianDate,
   getCairoCurrentDate,
   getEgyptianDayName,
 } from '../../utils/egyptianTime';
+import { LessonDeliveryWorkspaceModal } from './LessonDeliveryWorkspaceModal';
+import { ScheduleMatrixView } from './ScheduleMatrixView';
+import { ScheduleSubstitutionManager } from './ScheduleSubstitutionManager';
 
 export const TeacherPortalView: React.FC = () => {
-  const [schedule, setSchedule] = useState<ScheduleItem[]>(() => storageService.getSchedule());
-  const [lessons, setLessons] = useState<LessonContent[]>(() => storageService.getLessonContents());
-  const [activeTab, setActiveTab] = useState<'schedule' | 'lessons'>('schedule');
+  const currentUser = storageService.getCurrentUser();
+  const isAdminOrSupervisor =
+    currentUser?.role === 'Admin' ||
+    currentUser?.role === 'Supervisor' ||
+    currentUser?.role === 'TeacherAffairs';
 
-  const settings = storageService.getSettings();
-  const scheduleConfig = storageService.getScheduleConfig();
-  const daysOfWeek = scheduleConfig.studyDays?.length ? scheduleConfig.studyDays : ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
-  const periodCount = scheduleConfig.periodCount || 7;
-  const periodsList = Array.from({ length: periodCount }, (_, i) => i + 1);
-
-  const dynamicGrades = storageService.getGrades();
-  const dynamicSubjects = storageService.getSubjects();
-  const dynamicClassrooms = storageService.getClassrooms();
-
-  // Filter Schedule
-  const [selectedDay, setSelectedDay] = useState<string>('ALL');
-  const [selectedGrade, setSelectedGrade] = useState<string>('ALL');
-  const [selectedClassroom, setSelectedClassroom] = useState<string>('ALL');
-  const [selectedTeacher, setSelectedTeacher] = useState<string>('ALL');
-
-  // Add Item Modal
-  const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false);
-  const [isAddLessonModalOpen, setIsAddLessonModalOpen] = useState(false);
-
-  // New Schedule Item form
-  const [schedForm, setSchedForm] = useState<Partial<ScheduleItem>>({
-    dayName: daysOfWeek[0] || 'الأحد',
-    periodNumber: 1,
-    subject: dynamicSubjects[0]?.name || 'لغة عربية',
-    teacherName: '',
-    grade: dynamicGrades[0]?.name || 'الصف الأول الثانوي',
-    classroom: dynamicClassrooms[0] || '1/1',
-    startTime: '08:00',
-    endTime: '08:45',
-    roomNumber: 'قاعة 101',
-  });
-
-  // New Lesson form
-  const [lessonForm, setLessonForm] = useState<Partial<LessonContent>>({
-    date: getCairoCurrentDate(),
-    periodNumber: 1,
-    subject: dynamicSubjects[0]?.name || 'لغة عربية',
-    teacherName: '',
-    grade: dynamicGrades[0]?.name || 'الصف الأول الثانوي',
-    classroom: dynamicClassrooms[0] || '1/1',
-    lessonTitle: '',
-    summaryCovered: '',
-    homework: '',
-  });
-
-  const stages = settings.stages || [];
   const employees = storageService.getEmployees();
-  const teachers = employees.filter(e => e.department.includes('تدريس') || e.jobTitle.includes('معلم') || e.department.includes('تعليم'));
+  const teachers = employees.filter(
+    e => (e.department?.includes('تعليم') || e.department?.includes('تدريس') || e.jobTitle?.includes('معلم') || e.isTeacher) && e.status === 'Active'
+  );
+
+  // Selected Teacher (defaults to current logged-in user if they are a teacher, or first teacher)
+  const defaultTeacherId = useMemo(() => {
+    if (currentUser?.employeeId && teachers.some(t => t.id === currentUser.employeeId)) {
+      return currentUser.employeeId;
+    }
+    if (currentUser?.id && teachers.some(t => t.id === currentUser.id)) {
+      return currentUser.id;
+    }
+    return teachers[0]?.id || '';
+  }, [currentUser, teachers]);
+
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(defaultTeacherId);
+  const [selectedDate, setSelectedDate] = useState<string>(getCairoCurrentDate());
+  const [mainTab, setMainTab] = useState<'today' | 'matrix' | 'substitutions' | 'homework'>('today');
+
+  // Modal State for Lesson Delivery
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const [activeWorkspacePeriod, setActiveWorkspacePeriod] = useState<{
+    periodNumber: number;
+    scheduleItem?: ScheduleItem;
+    substitution?: ScheduleSubstitution;
+  } | null>(null);
+
+  // Selected Teacher Profile
+  const activeTeacher = useMemo(() => {
+    return teachers.find(t => t.id === selectedTeacherId) || teachers[0];
+  }, [teachers, selectedTeacherId]);
+
+  // Daily Context for selected teacher and date
+  const dayContext: TeacherDayContext = useMemo(() => {
+    if (!activeTeacher) {
+      return {
+        date: selectedDate,
+        dayName: getEgyptianDayName(selectedDate),
+        teacherId: '',
+        teacherName: '',
+        periods: [],
+      };
+    }
+    return ScheduleService.getTeacherDayContext(activeTeacher.id, selectedDate);
+  }, [activeTeacher, selectedDate]);
+
+  // Homework list for this teacher
+  const [allHomeworks, setAllHomeworks] = useState<Homework[]>(() => storageService.getHomeworks());
+  const [hwFilterSearch, setHwFilterSearch] = useState('');
+
+  const teacherHomeworks = useMemo(() => {
+    return allHomeworks.filter(h => {
+      const matchTeacher = !activeTeacher || h.teacherId === activeTeacher.id;
+      const matchSearch =
+        !hwFilterSearch ||
+        h.title.toLowerCase().includes(hwFilterSearch.toLowerCase()) ||
+        h.subject.toLowerCase().includes(hwFilterSearch.toLowerCase()) ||
+        h.classroom.includes(hwFilterSearch);
+      return matchTeacher && matchSearch;
+    });
+  }, [allHomeworks, activeTeacher, hwFilterSearch]);
 
   const reloadData = () => {
-    setSchedule(storageService.getSchedule());
-    setLessons(storageService.getLessonContents());
+    setAllHomeworks(storageService.getHomeworks());
   };
 
-  const filteredSchedule = useMemo(() => {
-    return schedule.filter(s => {
-      const matchDay = selectedDay === 'ALL' || s.dayName === selectedDay;
-      const matchGrade = selectedGrade === 'ALL' || s.grade === selectedGrade;
-      const matchClass = selectedClassroom === 'ALL' || s.classroom === selectedClassroom;
-      const matchTeacher = selectedTeacher === 'ALL' || s.teacherName === selectedTeacher;
-      return matchDay && matchGrade && matchClass && matchTeacher;
+  const handleOpenWorkspace = (period: TeacherDayContext['periods'][0]) => {
+    setActiveWorkspacePeriod({
+      periodNumber: period.periodNumber,
+      scheduleItem: period.scheduleItem,
+      substitution: period.substitution,
     });
-  }, [schedule, selectedDay, selectedGrade, selectedClassroom, selectedTeacher]);
-
-  const handleSaveScheduleItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!schedForm.subject || !schedForm.grade || !schedForm.classroom) {
-      alert('يرجى ملء الحقول الإلزامية');
-      return;
-    }
-
-    const item: ScheduleItem = {
-      id: `SCH-${Date.now()}`,
-      dayName: schedForm.dayName || 'الأحد',
-      periodNumber: Number(schedForm.periodNumber) || 1,
-      subject: schedForm.subject,
-      teacherName: schedForm.teacherName || 'معلم المادة',
-      teacherId: schedForm.teacherId || '',
-      grade: schedForm.grade,
-      classroom: schedForm.classroom,
-      startTime: schedForm.startTime || '08:00',
-      endTime: schedForm.endTime || '08:45',
-      roomNumber: schedForm.roomNumber,
-      academicYear: '2025/2026',
-      term: 'الترم الأول',
-      stage: 'المرحلة الثانوية',
-    };
-
-    storageService.saveScheduleItem(item);
-    setIsAddScheduleModalOpen(false);
-    reloadData();
-  };
-
-  const handleSaveLesson = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!lessonForm.subject || !lessonForm.lessonTitle) {
-      alert('يرجى إدخال المادة وعنوان الدرس');
-      return;
-    }
-
-    const lesson: LessonContent = {
-      id: `LES-${Date.now()}`,
-      teacherId: storageService.getCurrentUser()?.id || 'TCH-001',
-      date: lessonForm.date || getCairoCurrentDate(),
-      periodNumber: Number(lessonForm.periodNumber) || 1,
-      subject: lessonForm.subject,
-      teacherName: lessonForm.teacherName || storageService.getCurrentUser()?.fullName || 'المعلم',
-      grade: lessonForm.grade || 'الصف الأول الثانوي',
-      classroom: lessonForm.classroom || '1/1',
-      lessonTitle: lessonForm.lessonTitle,
-      summaryCovered: lessonForm.summaryCovered || '',
-      homework: lessonForm.homework,
-      links: [],
-      createdAt: new Date().toISOString(),
-    };
-
-    storageService.saveLessonContent(lesson);
-    setIsAddLessonModalOpen(false);
-    reloadData();
-  };
-
-  const handleDeleteScheduleItem = (id: string) => {
-    if (window.confirm('هل أنت متأكد من حذف هذه الحصة من الجدول؟')) {
-      storageService.deleteScheduleItem(id);
-      reloadData();
-    }
-  };
-
-  const exportScheduleExcel = () => {
-    const data = filteredSchedule.map((s, idx) => ({
-      'م': idx + 1,
-      'اليوم': s.dayName,
-      'الحصة': `الحصة ${s.periodNumber}`,
-      'المادة': s.subject,
-      'المعلم': s.teacherName,
-      'الصف': s.grade,
-      'الفصل': s.classroom,
-      'الموعد': `${s.startTime} - ${s.endTime}`,
-      'القاعة': s.roomNumber || '—',
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'الجدول_المدرسي');
-    XLSX.writeFile(wb, `الجدول_المدرسي_${new Date().toISOString().split('T')[0]}.xlsx`);
+    setIsWorkspaceOpen(true);
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <BookOpen className="w-6 h-6" />
+      {/* Teacher Profile & Context Card */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4 w-full md:w-auto">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-black text-xl flex items-center justify-center shadow-md shadow-emerald-600/20 shrink-0">
+            {activeTeacher?.name ? activeTeacher.name.charAt(0) : 'T'}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-slate-900">
+                {activeTeacher?.name || 'بوابة المعلم والجدول التشغيلي'}
+              </h2>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                {activeTeacher?.jobTitle || 'معلم'}
+              </span>
             </div>
-            <span>بوابة المعلم والجدول المدرسي والمناهج</span>
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            إدارة الحصص المدرسية، جدول المعلمين والفصول، وتوثيق الدروس المشروحة والواجبات
-          </p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {activeTeacher?.department || 'قسم المواد الدراسية'} • الكود الوظيفي: {activeTeacher?.employeeNumber || 'TCH'}
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={exportScheduleExcel}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl border border-slate-300 transition-colors"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            <span>تصدير الجدول Excel</span>
-          </button>
+        {/* Date Selector & Teacher Switcher (for Admins) */}
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
+          {isAdminOrSupervisor && (
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-2xl">
+              <span className="text-xs font-bold text-slate-500">عرض جدول:</span>
+              <select
+                value={selectedTeacherId}
+                onChange={e => setSelectedTeacherId(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-800 outline-none max-w-[180px]"
+              >
+                {teachers.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          {activeTab === 'schedule' ? (
-            <button
-              onClick={() => setIsAddScheduleModalOpen(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white font-bold text-xs rounded-2xl shadow-md transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>إضافة حصة للجدول</span>
-            </button>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-2xl">
+            <Calendar className="w-4 h-4 text-emerald-600" />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-800 outline-none"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Main Tabs Navigation */}
+      <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl overflow-x-auto">
+        <button
+          onClick={() => setMainTab('today')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            mainTab === 'today'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>اليوم الدراسي والحصص ({dayContext.dayName})</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab('matrix')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            mainTab === 'matrix'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>الجدول الأسبوعي والمصفوفة العامة</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab('substitutions')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            mainTab === 'substitutions'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>حصص الاحتياطي والبدلاء</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab('homework')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            mainTab === 'homework'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>سجل الواجبات والدروس ({teacherHomeworks.length})</span>
+        </button>
+      </div>
+
+      {/* TAB 1: TODAY'S OPERATIONAL TIMELINE */}
+      {mainTab === 'today' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Daily Quick Summary Strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-500 font-medium">إجمالي حصص اليوم</p>
+              <p className="text-xl font-black text-slate-900 mt-1">
+                {dayContext.periods.filter(p => p.effectiveSubject !== 'حصة فراغ / إشراف').length} حصة
+              </p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-500 font-medium">الحصص المكتملة</p>
+              <p className="text-xl font-black text-emerald-700 mt-1">
+                {dayContext.periods.filter(p => p.deliveryStatus === 'Delivered').length} منجزة
+              </p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-500 font-medium">حصص الاحتياطي المكلف بها</p>
+              <p className="text-xl font-black text-amber-700 mt-1">
+                {dayContext.periods.filter(p => p.isSubstitutionForOther).length} احتياطي
+              </p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-500 font-medium">حصص الفراغ / الراحة</p>
+              <p className="text-xl font-black text-blue-700 mt-1">
+                {dayContext.periods.filter(p => p.effectiveSubject === 'حصة فراغ / إشراف').length} فترات
+              </p>
+            </div>
+          </div>
+
+          {/* Today's Schedule Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dayContext.periods.map(period => {
+              const isFree = period.effectiveSubject === 'حصة فراغ / إشراف';
+              const isDelivered = period.deliveryStatus === 'Delivered';
+              const isSubIn = period.isSubstitutionForOther;
+              const isSubOut = period.isSubstituted;
+
+              return (
+                <div
+                  key={period.periodNumber}
+                  className={`rounded-3xl border p-5 transition-all flex flex-col justify-between ${
+                    isDelivered
+                      ? 'bg-emerald-50/40 border-emerald-200 shadow-sm'
+                      : isSubIn
+                      ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-400'
+                      : isSubOut
+                      ? 'bg-slate-50 border-slate-200 opacity-60'
+                      : isFree
+                      ? 'bg-slate-50 border-slate-200'
+                      : 'bg-white border-slate-200 shadow-sm hover:border-emerald-300'
+                  }`}
+                >
+                  <div>
+                    {/* Card Top Badges */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+                          {period.periodNumber}
+                        </span>
+                        <div className="text-[11px] font-mono font-bold text-slate-500">
+                          {period.startTime} - {period.endTime}
+                        </div>
+                      </div>
+
+                      {isDelivered && (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>تم التنفيذ</span>
+                        </span>
+                      )}
+
+                      {isSubIn && (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500 text-slate-950">
+                          حصة احتياطي بديلة
+                        </span>
+                      )}
+
+                      {isSubOut && (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700">
+                          مغطاة ببديل
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Subject & Classroom */}
+                    <div className="space-y-1 mb-4">
+                      <h4 className="text-base font-bold text-slate-900">
+                        {period.effectiveSubject}
+                      </h4>
+                      {!isFree && (
+                        <p className="text-xs font-bold text-emerald-800">
+                          {period.effectiveGrade} • فصل {period.effectiveClassroom}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-slate-500">
+                        {period.effectiveRoom}
+                      </p>
+                    </div>
+
+                    {/* Lesson Content summary if delivered */}
+                    {period.lessonContent && (
+                      <div className="p-3 bg-white rounded-2xl border border-emerald-100 text-xs mb-4 space-y-1">
+                        <p className="font-bold text-slate-800 truncate">
+                          📖 {period.lessonContent.title || period.lessonContent.lessonTitle}
+                        </p>
+                        {period.lessonContent.bookPages && (
+                          <p className="text-[11px] text-slate-500">
+                            ص: {period.lessonContent.bookPages}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Card Action Button */}
+                  {!isFree && !isSubOut ? (
+                    <button
+                      onClick={() => handleOpenWorkspace(period)}
+                      className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        isDelivered
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          : 'bg-slate-900 hover:bg-emerald-700 text-white shadow-sm'
+                      }`}
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      <span>{isDelivered ? 'تعديل تحضير الحصة والغياب' : 'ابدأ الحصة ورصد المحتوى'}</span>
+                    </button>
+                  ) : (
+                    <div className="py-2.5 text-center text-xs font-bold text-slate-400">
+                      {isSubOut ? 'تم تكليف بديل' : 'فترة استراحة وإشراف'}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: WEEKLY TIMETABLE MATRIX */}
+      {mainTab === 'matrix' && (
+        <div className="animate-fadeIn">
+          <ScheduleMatrixView currentUser={currentUser} />
+        </div>
+      )}
+
+      {/* TAB 3: SUBSTITUTION CONSOLE */}
+      {mainTab === 'substitutions' && (
+        <div className="animate-fadeIn">
+          <ScheduleSubstitutionManager currentUser={currentUser} />
+        </div>
+      )}
+
+      {/* TAB 4: HOMEWORK & LESSON CONTENT REPOSITORY */}
+      {mainTab === 'homework' && (
+        <div className="space-y-4 animate-fadeIn">
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between gap-4">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+              <input
+                type="text"
+                value={hwFilterSearch}
+                onChange={e => setHwFilterSearch(e.target.value)}
+                placeholder="بحث في الواجبات والدروس المسندة..."
+                className="w-full pr-9 pl-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+              />
+            </div>
+            <span className="text-xs font-bold text-slate-600">
+              إجمالي الواجبات: {teacherHomeworks.length}
+            </span>
+          </div>
+
+          {teacherHomeworks.length === 0 ? (
+            <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center text-slate-400">
+              <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-40 text-emerald-600" />
+              <p className="text-sm font-bold text-slate-700">لا توجد واجبات مسجلة حالياً</p>
+              <p className="text-xs text-slate-400 mt-1">
+                يمكنك إضافة وتكليف الواجبات مباشرة عند رصد أي حصة في جدول اليوم
+              </p>
+            </div>
           ) : (
-            <button
-              onClick={() => setIsAddLessonModalOpen(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-2xl shadow-md transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>توثيق درس مشروح جديد</span>
-            </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {teacherHomeworks.map(hw => (
+                <div
+                  key={hw.id}
+                  className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                      {hw.subject}
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      تسليم: {hw.dueDate}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">{hw.title}</h4>
+                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                      {hw.description || 'لا يوجد تفاصيل إضافية'}
+                    </p>
+                  </div>
+
+                  {hw.questions && (
+                    <div className="p-2.5 bg-slate-50 rounded-xl text-[11px] font-medium text-slate-700">
+                      📝 الأسئلة: {hw.questions}
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                    <span>{hw.grade} ({hw.classroom})</span>
+                    <span className="font-bold text-emerald-700">الدرجة: {hw.maxScore || 10}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="bg-white p-2 rounded-2xl border border-slate-200 flex items-center gap-2 text-xs font-bold w-fit">
-        <button
-          onClick={() => setActiveTab('schedule')}
-          className={`px-5 py-2.5 rounded-xl transition-all ${
-            activeTab === 'schedule' ? 'bg-[#008e8b] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          الجدول الدراسي الأسبوعي
-        </button>
-        <button
-          onClick={() => setActiveTab('lessons')}
-          className={`px-5 py-2.5 rounded-xl transition-all ${
-            activeTab === 'lessons' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          سجل الدروس المشروحة والواجبات ({lessons.length})
-        </button>
-      </div>
-
-      {/* TAB 1: SCHEDULE */}
-      {activeTab === 'schedule' && (
-        <div className="space-y-4">
-          {/* Filters */}
-          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">اليوم</label>
-              <select
-                value={selectedDay}
-                onChange={(e) => setSelectedDay(e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
-              >
-                <option value="ALL">جميع الأيام</option>
-                {daysOfWeek.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">الصف الدراسي</label>
-              <select
-                value={selectedGrade}
-                onChange={(e) => setSelectedGrade(e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
-              >
-                <option value="ALL">جميع الصفوف</option>
-                {(stages || []).flatMap(s => s.grades || []).map(g => (
-                  <option key={g.name} value={g.name}>{g.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">الفصل</label>
-              <select
-                value={selectedClassroom}
-                onChange={(e) => setSelectedClassroom(e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
-              >
-                <option value="ALL">جميع الفصول</option>
-                {['1/1', '1/2', '1/3', '2/1', '2/2', '3/1', '3/2'].map(c => (
-                  <option key={c} value={c}>فصل {c}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">المعلم</label>
-              <select
-                value={selectedTeacher}
-                onChange={(e) => setSelectedTeacher(e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
-              >
-                <option value="ALL">جميع المعلمين</option>
-                {teachers.map(t => (
-                  <option key={t.id} value={t.name}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Schedule Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-right border-collapse">
-                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="p-4">اليوم</th>
-                    <th className="p-4">رقم الحصة</th>
-                    <th className="p-4">المادة</th>
-                    <th className="p-4">المعلم المسند</th>
-                    <th className="p-4">الصف والفصل</th>
-                    <th className="p-4">التوقيت</th>
-                    <th className="p-4">القاعة</th>
-                    <th className="p-4 text-center">حذف</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredSchedule.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="p-12 text-center text-slate-400">
-                        <BookOpen className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                        <p className="text-sm font-semibold text-slate-600">لا توجد حصص مسجلة في الجدول حالياً</p>
-                        <p className="text-xs text-slate-400 mt-1">اضغط على زر "إضافة حصة للجدول" للبدء في بنائه</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredSchedule.map(item => (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="p-4 font-bold text-slate-800">{item.dayName}</td>
-                        <td className="p-4 font-mono font-bold text-[#008e8b]">الحصة {item.periodNumber}</td>
-                        <td className="p-4 font-bold text-slate-800 text-sm">{item.subject}</td>
-                        <td className="p-4 text-slate-700">{item.teacherName}</td>
-                        <td className="p-4">
-                          <span className="text-slate-800 font-medium">{item.grade}</span>
-                          <span className="block text-[11px] text-teal-700 font-bold">فصل {item.classroom}</span>
-                        </td>
-                        <td className="p-4 font-mono text-slate-600">{item.startTime} - {item.endTime}</td>
-                        <td className="p-4 text-slate-600">{item.roomNumber || '—'}</td>
-                        <td className="p-4 text-center">
-                          <button
-                            onClick={() => handleDeleteScheduleItem(item.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
       )}
 
-      {/* TAB 2: LESSONS */}
-      {activeTab === 'lessons' && (
-        <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-right border-collapse">
-              <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                <tr>
-                  <th className="p-4">التاريخ</th>
-                  <th className="p-4">الحصة</th>
-                  <th className="p-4">المادة</th>
-                  <th className="p-4">الصف والفصل</th>
-                  <th className="p-4">المعلم</th>
-                  <th className="p-4">عنوان ومحتوى الدرس المشروح</th>
-                  <th className="p-4">الواجب المنزلي</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {lessons.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-12 text-center text-slate-400">
-                      <BookOpen className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                      <p className="text-sm font-semibold text-slate-600">لم يتم توثيق أي دروس مشروحة حتى الآن</p>
-                    </td>
-                  </tr>
-                ) : (
-                  lessons.map(lesson => (
-                    <tr key={lesson.id} className="hover:bg-slate-50">
-                      <td className="p-4 font-mono text-slate-700">{formatEgyptianDate(lesson.date)}</td>
-                      <td className="p-4 font-mono text-slate-700">الحصة {lesson.periodNumber}</td>
-                      <td className="p-4 font-bold text-indigo-700">{lesson.subject}</td>
-                      <td className="p-4 text-slate-700">{lesson.grade} (فصل {lesson.classroom})</td>
-                      <td className="p-4 text-slate-800 font-medium">{lesson.teacherName}</td>
-                      <td className="p-4">
-                        <div className="font-bold text-slate-800">{lesson.lessonTitle}</div>
-                        {lesson.summaryCovered && (
-                          <div className="text-[11px] text-slate-500 mt-1">{lesson.summaryCovered}</div>
-                        )}
-                      </td>
-                      <td className="p-4 text-slate-700 font-medium">{lesson.homework || '—'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Add Schedule Item Modal */}
-      {isAddScheduleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden my-6">
-            <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-[#008e8b]" />
-                <span>إضافة حصة جديدة إلى الجدول الدراسي</span>
-              </h3>
-              <button onClick={() => setIsAddScheduleModalOpen(false)} className="text-slate-400 hover:text-slate-700">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveScheduleItem} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">اليوم</label>
-                  <select
-                    value={schedForm.dayName}
-                    onChange={(e) => setSchedForm({ ...schedForm, dayName: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  >
-                    {daysOfWeek.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">رقم الحصة</label>
-                  <select
-                    value={schedForm.periodNumber}
-                    onChange={(e) => setSchedForm({ ...schedForm, periodNumber: Number(e.target.value) })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  >
-                    {periodsList.map(p => (
-                      <option key={p} value={p}>الحصة {p}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">المادة الدراسية</label>
-                  <select
-                    value={schedForm.subject || ''}
-                    onChange={(e) => setSchedForm({ ...schedForm, subject: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  >
-                    {dynamicSubjects.map(s => (
-                      <option key={s.id} value={s.name}>{s.name} ({s.shortName || s.name})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">المعلم المسند</label>
-                  <select
-                    value={schedForm.teacherName || ''}
-                    onChange={(e) => {
-                      const t = teachers.find(tch => tch.name === e.target.value);
-                      setSchedForm({ ...schedForm, teacherName: e.target.value, teacherId: t?.id });
-                    }}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  >
-                    <option value="">— اختر المعلم —</option>
-                    {teachers.map(t => (
-                      <option key={t.id} value={t.name}>{t.name} ({t.jobTitle})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">الصف الدراسي</label>
-                  <select
-                    value={schedForm.grade || ''}
-                    onChange={(e) => {
-                      const stageWithGrade = (stages || []).find(st => (st.grades || []).some(g => g.name === e.target.value));
-                      const gr = stageWithGrade?.grades?.find(g => g.name === e.target.value);
-                      setSchedForm({
-                        ...schedForm,
-                        grade: e.target.value,
-                        classroom: gr?.classrooms?.[0] || '1/1',
-                      });
-                    }}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  >
-                    {dynamicGrades.map(g => (
-                      <option key={g.id} value={g.name}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">الفصل</label>
-                  <select
-                    value={schedForm.classroom || ''}
-                    onChange={(e) => setSchedForm({ ...schedForm, classroom: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  >
-                    {((stages || []).flatMap(st => st.grades || []).find(g => g.name === schedForm.grade)?.classrooms || dynamicClassrooms).map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">وقت البدء</label>
-                  <input
-                    type="time"
-                    value={schedForm.startTime || '08:00'}
-                    onChange={(e) => setSchedForm({ ...schedForm, startTime: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">وقت الانتهاء</label>
-                  <input
-                    type="time"
-                    value={schedForm.endTime || '08:45'}
-                    onChange={(e) => setSchedForm({ ...schedForm, endTime: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddScheduleModalOpen(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md"
-                >
-                  إدراج الحصة
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Add Lesson Modal */}
-      {isAddLessonModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden my-6">
-            <div className="p-6 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
-              <h3 className="text-base font-bold text-indigo-900 flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-indigo-600" />
-                <span>توثيق درس مشروح وخطة واجبات</span>
-              </h3>
-              <button onClick={() => setIsAddLessonModalOpen(false)} className="text-slate-400 hover:text-slate-700">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveLesson} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">التاريخ</label>
-                  <input
-                    type="date"
-                    value={lessonForm.date}
-                    onChange={(e) => setLessonForm({ ...lessonForm, date: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">المادة</label>
-                  <select
-                    value={lessonForm.subject || ''}
-                    onChange={(e) => setLessonForm({ ...lessonForm, subject: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2"
-                  >
-                    {dynamicSubjects.map(s => (
-                      <option key={s.id} value={s.name}>{s.name} ({s.shortName || s.name})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">عنوان الدرس المشروح</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="مثال: كان وأخواتها وتطبيقات إعرابية"
-                    value={lessonForm.lessonTitle || ''}
-                    onChange={(e) => setLessonForm({ ...lessonForm, lessonTitle: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2"
-                  />
-                </div>
-
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ملخص ما تم إنجازه وشرحه</label>
-                  <textarea
-                    rows={2}
-                    value={lessonForm.summaryCovered || ''}
-                    onChange={(e) => setLessonForm({ ...lessonForm, summaryCovered: e.target.value })}
-                    placeholder="تم شرح القاعدة وحل تدريبات الكتاب المدرسي ص 45..."
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl p-2.5"
-                  />
-                </div>
-
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">الواجب والتكليفات المنزلية</label>
-                  <input
-                    type="text"
-                    placeholder="حل تدريبات ص 46 و 47 في كشكول الواجب"
-                    value={lessonForm.homework || ''}
-                    onChange={(e) => setLessonForm({ ...lessonForm, homework: e.target.value })}
-                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddLessonModalOpen(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md"
-                >
-                  حفظ في السجل
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Lesson Delivery Workspace Modal */}
+      {isWorkspaceOpen && activeWorkspacePeriod && (
+        <LessonDeliveryWorkspaceModal
+          isOpen={isWorkspaceOpen}
+          onClose={() => setIsWorkspaceOpen(false)}
+          date={selectedDate}
+          periodNumber={activeWorkspacePeriod.periodNumber}
+          scheduleItem={activeWorkspacePeriod.scheduleItem}
+          substitution={activeWorkspacePeriod.substitution}
+          teacherId={activeTeacher?.id || ''}
+          teacherName={activeTeacher?.name || ''}
+          onSaved={reloadData}
+        />
       )}
     </div>
   );

@@ -72,6 +72,7 @@ export const STORAGE_KEYS = {
   SAVED_REPORT_FILTERS: 'ntss_saved_report_filters_v3',
   EFFECTIVE_CONFIGS: 'ntss_effective_configs_v3',
   BACKUP_HISTORY: 'ntss_backup_history_v3',
+  IMPORT_BATCHES: 'ntss_import_batches_v3',
 };
 
 export const DEFAULT_MASTER_DATA: MasterDataItem[] = [

@@ -29,13 +29,19 @@ import { UsersView } from './components/users/UsersView';
 import { AuditLogsView } from './components/audit/AuditLogsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { MasterDataManagerView } from './components/masterdata/MasterDataManagerView';
-import { BackupExportView } from './components/backup/BackupExportView';
+import { BackupRestoreView } from './components/backup/BackupRestoreView';
+import { ImportCenterView } from './components/import/ImportCenterView';
+import { SystemHealthView } from './components/health/SystemHealthView';
+import { OperationsCenterView } from './components/operations/OperationsCenterView';
 import { LoginView } from './components/auth/LoginView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const user = storageService.getCurrentUser();
+    return user?.role === 'Parent' ? 'parent_day_view' : 'dashboard';
+  });
   const [employees, setEmployees] = useState<Employee[]>(() => storageService.getEmployees());
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => storageService.getAttendance());
   const [leaves, setLeaves] = useState<LeaveRecord[]>(() => storageService.getLeaves());
@@ -44,6 +50,8 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => storageService.getAuditLogs());
   const [syncState, setSyncState] = useState<SyncState>(() => storageService.getSyncState());
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [selectedReportKey, setSelectedReportKey] = useState<string | undefined>();
+  const [selectedReportFilters, setSelectedReportFilters] = useState<Record<string, any> | undefined>();
 
   // Subscribe to storage changes
   useEffect(() => {
@@ -68,6 +76,14 @@ export default function App() {
   const handleLogout = () => {
     storageService.setCurrentUser(null);
     setCurrentUser(null);
+  };
+
+  const handleNavigate = (tab: string, params?: any) => {
+    if (tab === 'reports' && params) {
+      if (params.reportKey) setSelectedReportKey(params.reportKey);
+      if (params.filters) setSelectedReportFilters(params.filters);
+    }
+    setActiveTab(tab);
   };
 
   const renderActiveView = () => {
@@ -115,7 +131,7 @@ export default function App() {
         );
 
       case 'parent_portal':
-        return <ParentPortalView />;
+        return <ParentPortalView currentUser={currentUser} />;
 
       case 'payroll':
         return <PayrollView />;
@@ -175,17 +191,24 @@ export default function App() {
       case 'master_data':
         return <MasterDataManagerView />;
 
+      case 'import_center':
+        return <ImportCenterView currentUser={currentUser} />;
+
       case 'backup':
-        return <BackupExportView />;
+        return <BackupRestoreView currentUser={currentUser} />;
+
+      case 'system_health':
+        return <SystemHealthView currentUser={currentUser} />;
+
+      case 'operations':
+        return <OperationsCenterView currentUser={currentUser} onNavigateTab={handleNavigate} />;
 
       case 'reports':
         return (
           <ReportsView
-            employees={employees}
-            attendance={attendance}
-            leaves={leaves}
-            settings={settings}
             currentUser={currentUser}
+            initialReportKey={selectedReportKey}
+            initialFilters={selectedReportFilters}
           />
         );
 
@@ -220,7 +243,7 @@ export default function App() {
             leaves={leaves}
             settings={settings}
             currentUser={currentUser}
-            onNavigate={tab => setActiveTab(tab)}
+            onNavigate={(tab, params) => handleNavigate(tab, params)}
           />
         );
     }
@@ -235,8 +258,8 @@ export default function App() {
         settings={settings}
         onLogout={handleLogout}
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        onOpenSettings={() => setActiveTab('settings')}
-        onNavigate={tab => setActiveTab(tab)}
+        onOpenSettings={() => handleNavigate('settings')}
+        onNavigate={tab => handleNavigate(tab)}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -244,7 +267,7 @@ export default function App() {
         <Sidebar
           activeTab={activeTab}
           setActiveTab={tab => {
-            setActiveTab(tab);
+            handleNavigate(tab);
             setIsMobileMenuOpen(false);
           }}
           currentUser={currentUser}

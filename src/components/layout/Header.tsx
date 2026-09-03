@@ -219,13 +219,15 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Global Search Modal */}
       <GlobalSearchModal
+        currentUser={currentUser}
         userRole={currentUser?.role}
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onSelectResult={(entity, item) => {
-          if (entity === 'STUDENT' && onNavigate) onNavigate('students');
-          if (entity === 'EMPLOYEE' && onNavigate) onNavigate('employees');
+          if ((entity === 'STUDENT' || entity === 'STUDENTS') && onNavigate) onNavigate('students');
+          if ((entity === 'EMPLOYEE' || entity === 'EMPLOYEES') && onNavigate) onNavigate('employees');
           if (entity === 'BEHAVIOR' && onNavigate) onNavigate('behavior');
+          if (entity === 'SCHEDULE' && onNavigate) onNavigate('teacher_portal');
         }}
       />
 

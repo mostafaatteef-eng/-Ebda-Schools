@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Activity,
   Banknote,
   BookOpen,
   CalendarDays,
@@ -12,12 +13,14 @@ import {
   HeartHandshake,
   History,
   LayoutDashboard,
+  Server,
   Settings as SettingsIcon,
   Shield,
   ShieldCheck,
+  Sun,
+  UploadCloud,
   UserCheck,
   Users,
-  Sun,
 } from 'lucide-react';
 import { PermissionKey, User } from '../../types';
 import { hasPermission } from '../../utils/permissions';
@@ -37,8 +40,11 @@ export type ActiveTab =
   | 'payroll'
   | 'leaves'
   | 'master_data'
+  | 'import_center'
   | 'backup'
+  | 'system_health'
   | 'reports'
+  | 'operations'
   | 'users'
   | 'settings'
   | 'audit';
@@ -135,7 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'الجدول وبوابة المعلم',
           icon: BookOpen,
           permission: 'schedule.view',
-          hideForRoles: ['Parent', 'TeacherAffairs'],
+          hideForRoles: ['Parent'],
         },
         {
           id: 'parent_day_view',
@@ -198,6 +204,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'النظام والتقارير والرقابة',
       items: [
         {
+          id: 'reports',
+          label: 'مركز التقارير والإحصائيات',
+          icon: FileText,
+          permission: 'reports.view',
+          hideForRoles: ['Parent'],
+        },
+        {
+          id: 'import_center',
+          label: 'مركز الاستيراد والتحديث الذكي',
+          icon: UploadCloud,
+          adminOnly: true,
+          badge: 'Import',
+          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
+        },
+        {
+          id: 'system_health',
+          label: 'صحة النظام والأداء',
+          icon: Activity,
+          adminOnly: true,
+          badge: 'Diagnostics',
+          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
+        },
+        {
           id: 'master_data',
           label: 'إدارة القوائم والتعريفات',
           icon: Database,
@@ -207,17 +236,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'backup',
-          label: 'النسخ الاحتياطي والتصدير',
+          label: 'النسخ الاحتياطي والاستعادة',
           icon: ShieldCheck,
           adminOnly: true,
           hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
         },
         {
-          id: 'reports',
-          label: 'التقارير المدرسية',
-          icon: FileText,
-          permission: 'reports.view',
-          hideForRoles: ['Parent'],
+          id: 'operations',
+          label: 'مركز التشغيل والجاهزية (Go-Live)',
+          icon: Server,
+          adminOnly: true,
+          badge: 'RC1',
+          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
         },
         {
           id: 'users',

@@ -51,12 +51,24 @@ export interface Homework {
  * ========================================================================= */
 export type NotificationPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
+export type NotificationCategory =
+  | 'Attendance'
+  | 'Behavior'
+  | 'Schedule'
+  | 'Homework'
+  | 'LessonContent'
+  | 'System'
+  | 'HR'
+  | 'Payroll';
+
 export type NotificationType =
   | 'STUDENT_ABSENCE'
   | 'STUDENT_LATE'
   | 'STUDENT_REPEAT_ABSENCE'
   | 'STUDENT_UNRECORDED'
+  | 'CLASS_ATTENDANCE_MISMATCH'
   | 'BEHAVIOR_VIOLATION'
+  | 'POSITIVE_BEHAVIOR'
   | 'BEHAVIOR_CASE_NEW'
   | 'BEHAVIOR_FOLLOWUP_DUE'
   | 'PARENT_CONTACT_REQUIRED'
@@ -77,11 +89,13 @@ export type NotificationType =
 export interface AppNotification {
   id: string;
   type: NotificationType;
+  category?: NotificationCategory;
   title: string;
   message: string;
   targetUserId?: string;
   targetRole?: UserRole | 'ALL';
   targetStudentId?: string;
+  deduplicationKey?: string;
   relatedEntity?: string;
   relatedEntityId?: string;
   priority: NotificationPriority;
@@ -90,6 +104,7 @@ export interface AppNotification {
   createdAt: string;
   expiresAt?: string;
   actionUrl?: string;
+  actionLabel?: string;
   createdBySystem: boolean;
 }
 
@@ -225,28 +240,432 @@ export interface EffectiveConfigRecord {
 }
 
 /* =========================================================================
- * 8. Saved Report Filters
+ * 8. Saved Report Filters & Report Architecture
  * ========================================================================= */
+export type ReportModule = 'STUDENTS' | 'ACADEMIC' | 'BEHAVIOR' | 'HR' | 'PAYROLL';
+export type ReportExportFormat = 'EXCEL' | 'PDF' | 'PRINT' | 'CSV';
+
+export interface ReportColumn {
+  key: string;
+  label: string;
+  isDefaultVisible?: boolean;
+  align?: 'right' | 'center' | 'left';
+  width?: string;
+  isNumeric?: boolean;
+}
+
+export interface ReportFilterDef {
+  key: string;
+  label: string;
+  type: 'text' | 'select' | 'date' | 'month' | 'year' | 'number';
+  options?: { value: string; label: string }[];
+  defaultValue?: any;
+  placeholder?: string;
+}
+
+export interface ReportDefinition {
+  id: string;
+  key: string;
+  name: string;
+  module: ReportModule;
+  description: string;
+  requiredPermission?: PermissionKey;
+  adminOnly?: boolean;
+  availableFilters: ReportFilterDef[];
+  availableColumns: ReportColumn[];
+  exportFormats: ReportExportFormat[];
+  defaultSort?: { column: string; direction: 'asc' | 'desc' };
+  isActive: boolean;
+}
+
+export interface ReportQueryResult {
+  columns: ReportColumn[];
+  rows: Record<string, any>[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  summaryStats?: Record<string, any>;
+  appliedFilters: Record<string, any>;
+}
+
 export interface SavedReportFilter {
   id: string;
   userId: string;
-  reportType: 'STUDENT_ATTENDANCE' | 'EMPLOYEE_ATTENDANCE' | 'BEHAVIOR' | 'SCHEDULE' | 'PAYROLL' | 'STUDENT_360';
+  reportKey: string;
   name: string;
-  filters: Record<string, any>;
+  filtersJson: string;
+  columnsJson?: string;
+  sortJson?: string;
   isDefault?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/* =========================================================================
+ * 9. Backup & Export Metadata & Restore
+ * ========================================================================= */
+export type BackupType = 'FULL' | 'CONFIG' | 'ACADEMIC' | 'HR' | 'PAYROLL';
+
+export interface SystemBackupMetadata {
+  id: string;
+  type: BackupType;
+  createdAt: string;
+  createdBy: string;
+  description: string;
+  schemaVersion: string;
+  dataVersion: string;
+  status: 'SUCCESS' | 'FAILED';
+  sizeEstimateBytes?: number;
+  entitiesCount: Record<string, number>;
+  academicYearId?: string;
+}
+
+export interface SystemBackupPackage {
+  metadata: SystemBackupMetadata;
+  data: Record<string, any>;
+  safetyHash?: string;
+}
+
+export interface RestoreValidationReport {
+  isValid: boolean;
+  schemaVersion: string;
+  sourceCreatedDate: string;
+  sourceCreatedBy: string;
+  type: BackupType;
+  sheetsFound: string[];
+  missingRequiredSheets: string[];
+  duplicateKeysDetected: number;
+  incompatibilities: string[];
+  warnings: string[];
+  impactEstimate: Record<string, { currentCount: number; incomingCount: number; action: string }>;
+}
+
+/* =========================================================================
+ * 10. Import & Update Center
+ * ========================================================================= */
+export type ImportEntityType = 'STUDENTS' | 'PARENTS' | 'EMPLOYEES' | 'TEACHERS' | 'MASTER_DATA';
+export type ImportMode = 'ADD_ONLY' | 'UPDATE_ONLY' | 'ADD_UPDATE';
+
+export interface ImportFieldDefinition {
+  key: string;
+  label: string;
+  required: boolean;
+  aliases: string[];
+  type?: 'string' | 'number' | 'date' | 'phone';
+}
+
+export interface ImportValidationIssue {
+  rowNumber: number;
+  field: string;
+  value: any;
+  message: string;
+  severity: 'ERROR' | 'WARNING' | 'CONFLICT';
+}
+
+export interface ImportDiffRow {
+  rowNumber: number;
+  targetId?: string;
+  identifier: string; // studentCode or employeeId or nationalId
+  displayName: string;
+  classification: 'NEW' | 'UPDATE' | 'NO_CHANGE' | 'CONFLICT' | 'ERROR';
+  issues?: string[];
+  changes?: Record<string, { oldValue: any; newValue: any }>;
+  incomingData: Record<string, any>;
+}
+
+export interface ImportSummaryStats {
+  totalRows: number;
+  newCount: number;
+  updateCount: number;
+  noChangeCount: number;
+  conflictCount: number;
+  errorCount: number;
+}
+
+export interface ImportBatchRecord {
+  id: string; // e.g. "IMP-BATCH-20260902-12345"
+  entityType: ImportEntityType;
+  fileName: string;
+  mode: ImportMode;
+  totalRows: number;
+  addedCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  errorCount: number;
+  conflictCount: number;
+  selectedUpdateFields?: string[];
+  affectedIds: string[];
+  rollbackPossible: boolean;
+  rolledBack?: boolean;
+  rolledBackAt?: string;
+  rolledBackBy?: string;
+  createdBy: string;
+  createdAt: string;
+  status: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED' | 'ROLLED_BACK';
+  failedRows?: { rowNumber: number; data: any; reason: string }[];
+}
+
+/* =========================================================================
+ * 11. System Health & Observability
+ * ========================================================================= */
+export type HealthSeverity = 'HEALTHY' | 'WARNING' | 'CRITICAL';
+
+export interface HealthCheckItem {
+  id: string;
+  category: 'BACKEND' | 'SHEETS' | 'SYNC' | 'DATA_INTEGRITY' | 'SECURITY' | 'CONFIGURATION' | 'PAYROLL';
+  title: string;
+  description: string;
+  status: HealthSeverity;
+  metric?: string;
+  details?: string;
+  recommendedAction?: string;
+}
+
+export interface DataIntegrityViolation {
+  checkType: string;
+  title: string;
+  severity: HealthSeverity;
+  count: number;
+  sampleItems: { id: string; label: string; issue: string }[];
+}
+
+export interface SystemHealthOverview {
+  overallStatus: HealthSeverity;
+  lastCheckedAt: string;
+  backend: {
+    appsScriptConnected: boolean;
+    lastSuccessfulRequest?: string;
+    averageResponseTimeMs?: number;
+    lastError?: string;
+  };
+  sheets: {
+    reachable: boolean;
+    requiredSheetsPresent: string[];
+    missingSheets: string[];
+    schemaVersion: string;
+  };
+  sync: {
+    lastSuccessfulSync?: string;
+    pendingCount: number;
+    failedCount: number;
+    conflictsCount: number;
+    oldestPendingTime?: string;
+  };
+  dataCounts: {
+    students: number;
+    employees: number;
+    studentAttendanceRows: number;
+    employeeAttendanceRows: number;
+    classAttendanceRows: number;
+    violations: number;
+    notifications: number;
+    auditLogs: number;
+  };
+  checks: HealthCheckItem[];
+  integrityViolations: DataIntegrityViolation[];
+}
+
+/* =========================================================================
+ * 12. Load Testing & Capacity Estimation
+ * ========================================================================= */
+export type CapacityZone = 'SAFE' | 'WARNING' | 'MIGRATION';
+
+export interface CapacityAssessment {
+  currentStudents: number;
+  currentEmployees: number;
+  currentAttendanceRows: number;
+  dailyApiRequestsEstimated: number;
+  safeZoneLimit: string;
+  warningZoneLimit: string;
+  migrationZoneLimit: string;
+  verdict: 'SUITABLE' | 'SUITABLE_WITH_CONSTRAINTS' | 'APPROACHING_LIMITS' | 'MIGRATION_RECOMMENDED';
+  verdictReason: string;
+}
+
+/* =========================================================================
+ * 10. Monthly Attendance Closing & Period Lock
+ * ========================================================================= */
+export interface MonthlyAttendanceClosing {
+  id: string; // e.g. "CLOSE-2026-08"
+  month: number;
+  year: number;
+  status: 'OPEN' | 'IN_REVIEW' | 'CLOSED' | 'LOCKED';
+  totalEmployees: number;
+  recordedEmployees: number;
+  totalPresentDays: number;
+  totalAbsentDays: number;
+  totalLateMinutes: number;
+  totalOvertimeHours: number;
+  closedAt?: string;
+  closedBy?: string;
+  notes?: string;
+  isPayrollGenerated?: boolean;
+  payrollGeneratedAt?: string;
+  version?: number;
+}
+
+/* =========================================================================
+ * 11. Salary Adjustment & Effective Dating History
+ * ========================================================================= */
+export interface SalaryHistoryEntry {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  previousBasicSalary: number;
+  newBasicSalary: number;
+  previousAllowances: number;
+  newAllowances: number;
+  effectiveDate: string; // YYYY-MM-DD
+  reason: string; // e.g. "ترقية سنوية", "علاوة تميز", "تعديل هيكل الأجور"
+  approvedBy: string;
   createdAt: string;
 }
 
 /* =========================================================================
- * 9. Backup & Export Metadata
+ * 12. Employee Permission Request (أذونات وتصاريح العمل)
  * ========================================================================= */
-export interface SystemBackupMetadata {
+export interface EmployeePermissionRecord {
   id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  date: string; // YYYY-MM-DD
+  permissionType: string; // e.g. "إذن خروج مؤقت", "إذن تأخير صباحي", "مهمة عمل رسمية"
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  durationHours: number;
+  reason: string;
+  status: 'معلقة' | 'مقبولة' | 'مرفوضة';
+  approvedBy?: string;
+  rejectionReason?: string;
   createdAt: string;
-  createdBy: string;
-  type: 'FULL_BACKUP' | 'STUDENTS_SNAPSHOT' | 'ATTENDANCE_SNAPSHOT' | 'SETTINGS_SNAPSHOT';
-  academicYearId?: string;
-  description: string;
-  entitiesCount: Record<string, number>;
-  fileSizeKb?: number;
 }
+
+/* =========================================================================
+ * 13. Global Search Types
+ * ========================================================================= */
+export type SearchCategory = 'ALL' | 'STUDENTS' | 'EMPLOYEES' | 'CLASSROOMS' | 'BEHAVIOR' | 'SCHEDULE';
+
+export interface GlobalSearchResultItem {
+  id: string;
+  category: 'STUDENTS' | 'EMPLOYEES' | 'CLASSROOMS' | 'BEHAVIOR' | 'SCHEDULE' | string;
+  categoryLabel: string;
+  title: string;
+  subtitle: string;
+  badge?: string;
+  actionTab: string;
+  entityId?: string;
+  raw?: any;
+  meta?: Record<string, any>;
+}
+
+/* =========================================================================
+ * 14. Phase 10: UAT, Pilot, Operations & Release Candidate Types
+ * ========================================================================= */
+export type UatResult = 'PASS' | 'FAIL' | 'BLOCKED';
+export type IssueSeverity = 'P0' | 'P1' | 'P2' | 'P3';
+export type IncidentSeverity = 'SEV-1' | 'SEV-2' | 'SEV-3' | 'SEV-4';
+
+export interface UatTestCase {
+  id: string;
+  role: 'Admin' | 'StudentAffairs' | 'TeacherAffairs' | 'Teacher' | 'SocialSpecialist' | 'Parent' | 'Security';
+  roleLabel: string;
+  module: string;
+  scenario: string;
+  steps: string[];
+  expected: string;
+  actual: string;
+  result: UatResult;
+  severity: IssueSeverity;
+  notes: string;
+}
+
+export interface UatRoleSignoff {
+  role: string;
+  roleTitle: string;
+  status: 'PASS' | 'PASS_WITH_ISSUES' | 'FAIL';
+  signoffUser: string;
+  testedScenariosCount: number;
+  passedCount: number;
+  notes: string;
+}
+
+export interface PilotIssueItem {
+  id: string;
+  role: string;
+  module: string;
+  description: string;
+  severity: IssueSeverity;
+  frequency: 'Isolated' | 'Occasional' | 'Frequent';
+  workaround: string;
+  fixStatus: 'Open' | 'InReview' | 'Resolved' | 'PostGoLiveBacklog';
+  reportedAt: string;
+}
+
+export interface PilotMetricsData {
+  pilotActiveUsers: number;
+  loginSuccessRate: number; // e.g. 99.6%
+  attendanceSaveSuccessRate: number; // 100%
+  avgClassroomAttendanceSec: number; // e.g. 11.2s for 40 students
+  avgStudentAffairsReviewSec: number; // e.g. 24.5s
+  syncFailuresCount: number; // 0
+  apiFailuresCount: number; // 0
+  activeTeachersCount: number;
+  lessonsRecordedCount: number;
+  activeParentsCount: number;
+  attendanceCompletionRate: number; // e.g. 98.5%
+}
+
+export interface IncidentRecord {
+  id: string;
+  reportedAt: string;
+  reportedBy: string;
+  role: string;
+  module: string;
+  description: string;
+  severity: IncidentSeverity;
+  affectedUsers: string;
+  status: 'Open' | 'UnderInvestigation' | 'Mitigated' | 'Resolved';
+  errorCategory: 'Validation Error' | 'Permission Error' | 'Network Error' | 'System Bug';
+  requestId?: string;
+  rootCause?: string;
+  resolution?: string;
+  closedAt?: string;
+}
+
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+  category?: string;
+  notes?: string;
+}
+
+export interface BacklogItem {
+  id: string;
+  title: string;
+  description: string;
+  impact: 'High' | 'Medium' | 'Low';
+  frequency: 'Frequent' | 'Occasional' | 'Rare';
+  priority: 'High' | 'Medium' | 'Low';
+  risk: 'Low' | 'Medium' | 'High';
+  requestedBy: string;
+  createdAt: string;
+}
+
+export interface ReleaseCandidateMeta {
+  version: string;
+  buildVersion: string;
+  schemaVersion: string;
+  configVersion: string;
+  appsScriptVersion: string;
+  frontendVersion: string;
+  releaseDate: string;
+  featureFreeze: boolean;
+  environment: 'Production' | 'Staging';
+  schoolName: string;
+  timezone: string;
+  currency: string;
+}
+

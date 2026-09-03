@@ -1,475 +1,530 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
+  HeartHandshake,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  BookOpen,
+  FileText,
   AlertTriangle,
   Award,
-  BookOpen,
-  Calendar,
-  CheckCircle,
-  FileText,
-  GraduationCap,
-  HeartHandshake,
-  Mail,
-  Phone,
-  Printer,
-  Search,
-  Shield,
+  ChevronDown,
   User,
+  ArrowRight,
+  ExternalLink,
+  ShieldAlert,
+  Flame,
+  Check,
+  Printer,
+  Sparkles,
+  Search,
+  Filter,
+  BarChart2,
+  ListOrdered,
+  CalendarDays,
 } from 'lucide-react';
-import { Student } from '../../types';
+import { User as UserType } from '../../types';
 import { storageService } from '../../services/storageService';
-import { formatEgyptianCurrency, formatEgyptianDate, getCairoCurrentDate } from '../../utils/egyptianTime';
+import {
+  ParentDayViewData,
+  ParentSafeStudent,
+  ParentAttendanceSummary,
+} from '../../services/parentService';
+import { ParentDayView } from './ParentDayView';
+import {
+  getCairoCurrentDate,
+  getEgyptianDayName,
+  formatEgyptianDate,
+} from '../../utils/egyptianTime';
 
-export const ParentPortalView: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'attendance' | 'behavior' | 'schedule' | 'homework'>('overview');
+interface ParentPortalViewProps {
+  currentUser: UserType | null;
+}
 
-  const students = storageService.getStudents();
+export const ParentPortalView: React.FC<ParentPortalViewProps> = ({ currentUser }) => {
+  const [activeTab, setActiveTab] = useState<'dayView' | 'attendance' | 'schedule' | 'homework' | 'behavior'>('dayView');
+  const [linkedStudents, setLinkedStudents] = useState<ParentSafeStudent[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [attendanceSummary, setAttendanceSummary] = useState<ParentAttendanceSummary | null>(null);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return;
-
-    const match = students.find(
-      s =>
-        s.studentCode.toLowerCase() === query ||
-        s.name.toLowerCase().includes(query) ||
-        (s.nationalId && s.nationalId === query) ||
-        (s.parentPhone && s.parentPhone.includes(query))
-    );
-
-    if (match) {
-      setSelectedStudent(match);
-    } else {
-      alert('لم يتم العثور على طالب مطابق لبيانات البحث (كود الطالب أو الرقم القومي أو هاتف ولي الأمر)');
+  useEffect(() => {
+    const students = storageService.getParentLinkedStudents(currentUser);
+    setLinkedStudents(students);
+    if (students.length > 0 && !selectedStudentId) {
+      setSelectedStudentId(students[0].id);
     }
-  };
+  }, [currentUser]);
 
-  const attendanceRecords = selectedStudent
-    ? storageService
-        .getStudentAttendance()
-        .filter(a => a.studentId === selectedStudent.id)
-        .sort((a, b) => b.date.localeCompare(a.date))
-    : [];
+  useEffect(() => {
+    if (selectedStudentId) {
+      const summary = storageService.getParentAttendanceSummary(selectedStudentId, currentUser);
+      if (summary.success && summary.data) {
+        setAttendanceSummary(summary.data);
+      }
+    }
+  }, [selectedStudentId, currentUser]);
 
-  const behaviorScore = selectedStudent ? storageService.calculateStudentBehaviorScore(selectedStudent.id) : null;
-  const violations = selectedStudent
-    ? storageService
-        .getBehaviorViolations()
-        .filter(v => v.studentId === selectedStudent.id)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    : [];
+  const selectedStudent = linkedStudents.find(s => s.id === selectedStudentId) || linkedStudents[0];
 
-  const schedule = selectedStudent
+  // 1. Weekly Schedule for selected student
+  const weeklySchedule = selectedStudent
     ? storageService
         .getSchedule()
         .filter(s => s.grade === selectedStudent.grade && (!s.classroom || s.classroom === selectedStudent.classroom))
+        .sort((a, b) => a.periodNumber - b.periodNumber)
     : [];
 
-  const lessonCoverage = selectedStudent
+  const daysOfWeek = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+
+  // 2. All Homeworks for student
+  const studentHomeworks = selectedStudent
     ? storageService
-        .getLessonContents()
-        .filter(l => l.grade === selectedStudent.grade && (!l.classroom || l.classroom === selectedStudent.classroom))
-        .sort((a, b) => b.date.localeCompare(a.date))
+        .getHomeworks()
+        .filter(
+          h =>
+            h.grade === selectedStudent.grade &&
+            (!h.classroom || h.classroom === selectedStudent.classroom) &&
+            (h.status === 'Published' || (h as any).published === true)
+        )
     : [];
 
-  const handlePrintReport = () => {
+  // 3. Behavior Violations & Points
+  const behaviorViolations = selectedStudent
+    ? storageService.getBehaviorViolations().filter(v => v.studentId === selectedStudent.id && v.status === 'معتمدة')
+    : [];
+  const behaviorLedger = selectedStudent
+    ? storageService.getBehaviorLedger(selectedStudent.id)
+    : [];
+  const behaviorScore = selectedStudent
+    ? storageService.calculateStudentBehaviorScore(selectedStudent.id)
+    : null;
+
+  const handlePrintFullReport = () => {
     window.print();
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-teal-50 text-[#008e8b] flex items-center justify-center">
-              <HeartHandshake className="w-6 h-6" />
-            </div>
-            <span>بوابة ولي الأمر للمتابعة والتقارير المدرسية</span>
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            متابعة فورية للحضور، السلوك والانضباط، الدروس المشروحة والواجبات، وطباعة كشف المتابعة
-          </p>
+    <div className="space-y-6 max-w-6xl mx-auto pb-16 animate-in fade-in duration-200" id="parent-portal-main">
+      {/* Top Header Card */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-teal-50 text-[#008e8b] flex items-center justify-center shrink-0 border border-teal-100 shadow-xs">
+            <HeartHandshake className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">بوابة ولي الأمر للمتابعة والتقارير</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              متابعة شاملة للحضور والغياب، الواجبات، السلوك، والجدول الأسبوعي
+            </p>
+          </div>
         </div>
 
-        {selectedStudent && (
+        {/* Global Student Selector & Print */}
+        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
+          {linkedStudents.length > 1 && (
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1.5 px-3">
+              <User className="w-4 h-4 text-[#008e8b]" />
+              <select
+                value={selectedStudentId}
+                onChange={e => setSelectedStudentId(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+              >
+                {linkedStudents.map(std => (
+                  <option key={std.id} value={std.id}>
+                    {std.name} ({std.grade} - {std.classroom})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
-            onClick={handlePrintReport}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl border border-slate-300 transition-colors"
+            onClick={handlePrintFullReport}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold border border-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="طباعة كشف المتابعة الشامل"
           >
             <Printer className="w-4 h-4 text-[#008e8b]" />
-            <span>طباعة بطاقة متابعة الطالب</span>
+            <span>طباعة تقرير شامل</span>
           </button>
-        )}
+        </div>
       </div>
 
-      {/* Student Lookup Card */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
-        <form onSubmit={handleSearch} className="max-w-xl mx-auto space-y-3 text-center">
-          <h3 className="text-sm font-bold text-slate-800">
-            البحث عن بيانات الطالب وولي الأمر
-          </h3>
-          <p className="text-xs text-slate-500">
-            أدخل كود الطالب، أو الرقم القومي، أو رقم هاتف ولي الأمر، أو اسم الطالب:
-          </p>
+      {/* Navigation Sub-Tabs */}
+      <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-xs flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
+        <button
+          onClick={() => setActiveTab('dayView')}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+            activeTab === 'dayView'
+              ? 'bg-[#008e8b] text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>اليوم الدراسي</span>
+        </button>
 
-          <div className="flex items-center gap-2 mt-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
-              <input
-                type="text"
-                required
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="كود الطالب أو الرقم القومي أو هاتف ولي الأمر..."
-                className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl pr-10 pl-4 py-2.5 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors"
-            >
-              بحث
-            </button>
-          </div>
+        <button
+          onClick={() => setActiveTab('attendance')}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+            activeTab === 'attendance'
+              ? 'bg-[#008e8b] text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>سجل الحضور والغياب</span>
+        </button>
 
-          {/* Quick Select demo pills if students exist */}
-          {students.length > 0 && !selectedStudent && (
-            <div className="pt-2 flex items-center justify-center gap-2 flex-wrap text-xs text-slate-500">
-              <span>طلاب متاحون للتجربة السريعة:</span>
-              {students.slice(0, 3).map(s => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedStudent(s);
-                    setSearchQuery(s.name);
-                  }}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-teal-50 hover:text-[#008e8b] rounded-lg text-[11px] font-semibold border border-slate-200 transition-colors"
-                >
-                  {s.name} ({s.studentCode})
-                </button>
-              ))}
-            </div>
-          )}
-        </form>
+        <button
+          onClick={() => setActiveTab('schedule')}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+            activeTab === 'schedule'
+              ? 'bg-[#008e8b] text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <CalendarDays className="w-4 h-4" />
+          <span>الجدول الأسبوعي</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('homework')}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+            activeTab === 'homework'
+              ? 'bg-[#008e8b] text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>الواجبات والتكليفات</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('behavior')}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+            activeTab === 'behavior'
+              ? 'bg-[#008e8b] text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Award className="w-4 h-4" />
+          <span>السلوك والانضباط</span>
+        </button>
       </div>
 
-      {/* Selected Student Dashboard View */}
-      {selectedStudent && (
-        <div className="space-y-6 animate-fade-in">
-          {/* Student Profile Card */}
-          <div className="bg-gradient-to-l from-slate-900 via-slate-800 to-teal-950 text-white p-6 rounded-3xl shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-2xl font-bold text-teal-300">
-                {selectedStudent.name.charAt(0)}
-              </div>
-              <div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h2 className="text-xl font-bold text-white">{selectedStudent.name}</h2>
-                  <span className="bg-teal-500/20 text-teal-300 border border-teal-500/30 px-3 py-0.5 rounded-full text-xs font-mono">
-                    {selectedStudent.studentCode}
-                  </span>
+      {/* Tab Contents */}
+      {activeTab === 'dayView' && (
+        <ParentDayView currentUser={currentUser} />
+      )}
+
+      {activeTab === 'attendance' && (
+        <div className="space-y-6">
+          {/* Attendance KPI Cards */}
+          {attendanceSummary && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs text-right">
+                <span className="text-[11px] font-bold text-slate-500">نسبة الحضور التراكمية</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">
+                  {attendanceSummary.attendanceRate}%
                 </div>
-                <p className="text-xs text-slate-300 mt-1 flex items-center gap-2 flex-wrap">
-                  <span>{selectedStudent.stage}</span>
-                  <span>•</span>
-                  <span>{selectedStudent.grade}</span>
-                  <span>•</span>
-                  <span className="font-bold text-teal-200 bg-teal-900/50 px-2 py-0.5 rounded-md">
-                    فصل {selectedStudent.classroom}
-                  </span>
-                </p>
+                <div className="text-[10px] text-slate-400 mt-0.5">من إجمالي {attendanceSummary.totalSchoolDays} يوم دراسي</div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-3 bg-white/10 p-3.5 rounded-2xl border border-white/10">
-              <div className="text-right">
-                <span className="text-[11px] text-slate-300 block">درجة الانضباط السلوكي:</span>
-                <span className="text-xl font-bold font-mono text-emerald-400">
-                  {behaviorScore?.currentScore || 100} / 100
-                </span>
+              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs text-right">
+                <span className="text-[11px] font-bold text-slate-500">أيام الحضور</span>
+                <div className="text-2xl font-black text-slate-900 mt-1">
+                  {attendanceSummary.presentDays}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">حضور كامل بطابور الصباح</div>
               </div>
-              <div className="h-8 w-px bg-white/20" />
-              <div className="text-right">
-                <span className="text-[11px] text-slate-300 block">ولي الأمر:</span>
-                <span className="text-xs font-bold text-white">{selectedStudent.parentName}</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Sub Navigation */}
-          <div className="bg-white p-2 rounded-2xl border border-slate-200 flex items-center gap-2 overflow-x-auto text-xs font-bold">
-            <button
-              onClick={() => setActiveSubTab('overview')}
-              className={`px-4 py-2 rounded-xl transition-all ${
-                activeSubTab === 'overview' ? 'bg-[#008e8b] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              ملخص المتابعة الشامل
-            </button>
-            <button
-              onClick={() => setActiveSubTab('attendance')}
-              className={`px-4 py-2 rounded-xl transition-all ${
-                activeSubTab === 'attendance' ? 'bg-[#008e8b] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              سجل الحضور والغياب ({attendanceRecords.length})
-            </button>
-            <button
-              onClick={() => setActiveSubTab('behavior')}
-              className={`px-4 py-2 rounded-xl transition-all ${
-                activeSubTab === 'behavior' ? 'bg-[#008e8b] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              لائحة السلوك والمخالفات ({violations.length})
-            </button>
-            <button
-              onClick={() => setActiveSubTab('homework')}
-              className={`px-4 py-2 rounded-xl transition-all ${
-                activeSubTab === 'homework' ? 'bg-[#008e8b] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              الدروس المشروحة والواجبات ({lessonCoverage.length})
-            </button>
-            <button
-              onClick={() => setActiveSubTab('schedule')}
-              className={`px-4 py-2 rounded-xl transition-all ${
-                activeSubTab === 'schedule' ? 'bg-[#008e8b] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              الجدول المدرسي للحصص
-            </button>
-          </div>
-
-          {/* Sub Tab: Overview */}
-          {activeSubTab === 'overview' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Attendance quick box */}
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-[#008e8b]" />
-                  <span>مؤشر الحضور والمواظبة</span>
-                </h4>
-                <div className="p-4 bg-teal-50/60 rounded-2xl border border-teal-100 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-teal-800 font-semibold block">إجمالي أيام الحضور:</span>
-                    <span className="text-2xl font-bold font-mono text-[#008e8b]">
-                      {attendanceRecords.filter(a => a.status === 'حاضر').length} يوم
-                    </span>
-                  </div>
-                  <div className="text-left">
-                    <span className="text-xs text-rose-700 font-semibold block">أيام الغياب:</span>
-                    <span className="text-2xl font-bold font-mono text-rose-600">
-                      {attendanceRecords.filter(a => a.status.includes('غائب')).length} يوم
-                    </span>
-                  </div>
+              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs text-right">
+                <span className="text-[11px] font-bold text-slate-500">أيام الغياب</span>
+                <div className="text-2xl font-black text-rose-600 mt-1">
+                  {attendanceSummary.absentDays}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  ({attendanceSummary.excusedDays} بعذر مقبول)
                 </div>
               </div>
 
-              {/* Behavior quick box */}
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-amber-500" />
-                  <span>التقييم والانضباط الأخلاقي</span>
-                </h4>
-                <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-100 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-amber-800 font-semibold block">الرصيد المتبقي:</span>
-                    <span className="text-2xl font-bold font-mono text-amber-700">
-                      {behaviorScore?.currentScore} / 100
-                    </span>
-                  </div>
-                  <div className="text-left">
-                    <span className="text-xs text-slate-500 font-semibold block">الحالة العامة:</span>
-                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md">
-                      {behaviorScore?.statusText}
-                    </span>
-                  </div>
+              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs text-right">
+                <span className="text-[11px] font-bold text-slate-500">أيام التأخير الصباحي</span>
+                <div className="text-2xl font-black text-amber-600 mt-1">
+                  {attendanceSummary.lateDays}
                 </div>
-              </div>
-
-              {/* Contact box */}
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-[#008e8b]" />
-                  <span>قنوات التواصل مع إدارة المدرسة</span>
-                </h4>
-                <div className="space-y-2 text-xs">
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                    <span className="text-slate-500">هاتف إدارة شؤون الطلاب:</span>
-                    <span className="font-bold text-slate-800 font-mono">02-24156789</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                    <span className="text-slate-500">الخط الساخن للمتابعة:</span>
-                    <span className="font-bold text-slate-800 font-mono">19876</span>
-                  </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  إجمالي {attendanceSummary.totalLateMinutes} دقيقة تأخير
                 </div>
               </div>
             </div>
           )}
 
-          {/* Sub Tab: Homework & Lessons */}
-          {activeSubTab === 'homework' && (
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-              <table className="w-full text-xs text-right border-collapse">
-                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="p-4">التاريخ</th>
-                    <th className="p-4">المادة</th>
-                    <th className="p-4">المعلم</th>
-                    <th className="p-4">الدرس المشروح في الفصل</th>
-                    <th className="p-4">الواجب والتكليف المنزلي المطلوب</th>
+          {/* Detailed Attendance Records Table */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
+            <h3 className="text-sm font-black text-slate-900 mb-4 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-[#008e8b]" />
+              <span>سجل الحضور اليومي المفصل</span>
+            </h3>
+
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold">
+                    <th className="py-3 px-4">التاريخ</th>
+                    <th className="py-3 px-4">اليوم</th>
+                    <th className="py-3 px-4">الحالة</th>
+                    <th className="py-3 px-4">وقت الحضور</th>
+                    <th className="py-3 px-4">دقائق التأخير</th>
+                    <th className="py-3 px-4">العذر والملاحظات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {lessonCoverage.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-400">
-                        لا توجد دروس أو تكليفات مسجلة حتى الآن
-                      </td>
-                    </tr>
-                  ) : (
-                    lessonCoverage.map(l => (
-                      <tr key={l.id} className="hover:bg-slate-50">
-                        <td className="p-4 font-mono text-slate-700">{formatEgyptianDate(l.date)}</td>
-                        <td className="p-4 font-bold text-[#008e8b]">{l.subject}</td>
-                        <td className="p-4 text-slate-700">{l.teacherName}</td>
-                        <td className="p-4 font-semibold text-slate-800">{l.lessonTitle}</td>
-                        <td className="p-4 font-medium text-amber-900 bg-amber-50/40 rounded-lg">{l.homework || 'لا يوجد واجب'}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Sub Tab: Attendance */}
-          {activeSubTab === 'attendance' && (
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-              <table className="w-full text-xs text-right border-collapse">
-                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="p-4">التاريخ</th>
-                    <th className="p-4">اليوم</th>
-                    <th className="p-4">حالة الحضور</th>
-                    <th className="p-4">وقت الحضور</th>
-                    <th className="p-4">التأخير</th>
-                    <th className="p-4">بيان العذر</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {attendanceRecords.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
-                        لا توجد سجلات حضور مسجلة
-                      </td>
-                    </tr>
-                  ) : (
-                    attendanceRecords.map(a => (
-                      <tr key={a.id} className="hover:bg-slate-50">
-                        <td className="p-4 font-mono text-slate-700">{formatEgyptianDate(a.date)}</td>
-                        <td className="p-4 text-slate-700">{a.dayName}</td>
-                        <td className="p-4">
+                  {attendanceSummary && attendanceSummary.records.length > 0 ? (
+                    attendanceSummary.records.map((rec, i) => (
+                      <tr key={i} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-4 font-mono font-bold text-slate-800">{rec.date}</td>
+                        <td className="py-3 px-4 font-bold text-slate-700">{getEgyptianDayName(rec.date)}</td>
+                        <td className="py-3 px-4">
                           <span
-                            className={`px-2.5 py-1 rounded-full font-bold text-[11px] ${
-                              a.status === 'حاضر'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : a.status === 'متأخر'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-rose-100 text-rose-800'
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                              rec.status === 'حاضر'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : rec.status === 'متأخر'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : rec.status === 'غائب'
+                                ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                                : 'bg-slate-100 text-slate-700'
                             }`}
                           >
-                            {a.status}
+                            {rec.status} {rec.isExcused ? '(بعذر)' : ''}
                           </span>
                         </td>
-                        <td className="p-4 font-mono text-slate-700">{a.checkInTime || '—'}</td>
-                        <td className="p-4 font-mono text-slate-700">{a.lateMinutes ? `${a.lateMinutes} دقيقة` : '—'}</td>
-                        <td className="p-4 text-slate-600">{a.absenceReason || a.notes || '—'}</td>
+                        <td className="py-3 px-4 font-mono text-slate-600">{rec.checkInTime || '-'}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-amber-700">
+                          {rec.lateMinutes ? `${rec.lateMinutes} دقيقة` : '-'}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">{rec.excuseReason || rec.notes || '-'}</td>
                       </tr>
                     ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Sub Tab: Behavior */}
-          {activeSubTab === 'behavior' && (
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-              <table className="w-full text-xs text-right border-collapse">
-                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="p-4">التاريخ</th>
-                    <th className="p-4">المخالفة</th>
-                    <th className="p-4">درجة المخالفة</th>
-                    <th className="p-4">حسم النقاط</th>
-                    <th className="p-4">الإجراء المتخذ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {violations.length === 0 ? (
+                  ) : (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-emerald-600 font-semibold">
-                        سجل الطالب خالٍ تماماً من أي مخالفات انضباطية.
+                      <td colSpan={6} className="py-8 text-center text-slate-400">
+                        لا توجد سجلات حضور مسجلة للطالب حتى الآن.
                       </td>
                     </tr>
-                  ) : (
-                    violations.map(v => (
-                      <tr key={v.id} className="hover:bg-slate-50">
-                        <td className="p-4 font-mono text-slate-700">{formatEgyptianDate(v.date)}</td>
-                        <td className="p-4 font-bold text-slate-800">{v.violationName}</td>
-                        <td className="p-4">{v.severity}</td>
-                        <td className="p-4 font-mono font-bold text-rose-600">-{v.pointsDeducted} نقطة</td>
-                        <td className="p-4 text-slate-700">{v.actionTaken || '—'}</td>
-                      </tr>
-                    ))
                   )}
                 </tbody>
               </table>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
-          {/* Sub Tab: Schedule */}
-          {activeSubTab === 'schedule' && (
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-              <table className="w-full text-xs text-right border-collapse">
-                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="p-4">اليوم</th>
-                    <th className="p-4">رقم الحصة</th>
-                    <th className="p-4">المادة</th>
-                    <th className="p-4">المعلم</th>
-                    <th className="p-4">الموعد</th>
-                    <th className="p-4">القاعة</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {schedule.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
-                        لم يتم تسجيل جدول حصص لهذا الصف بعد
-                      </td>
-                    </tr>
-                  ) : (
-                    schedule.map(s => (
-                      <tr key={s.id} className="hover:bg-slate-50">
-                        <td className="p-4 font-bold text-slate-800">{s.dayName}</td>
-                        <td className="p-4 font-mono font-bold text-[#008e8b]">الحصة {s.periodNumber}</td>
-                        <td className="p-4 font-bold text-slate-800">{s.subject}</td>
-                        <td className="p-4 text-slate-700">{s.teacherName}</td>
-                        <td className="p-4 font-mono text-slate-600">{s.startTime} - {s.endTime}</td>
-                        <td className="p-4 text-slate-600">{s.roomNumber || '—'}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+      {activeTab === 'schedule' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-[#008e8b]" />
+                <span>الجدول الدراسي الأسبوعي</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                الصف: {selectedStudent?.grade} - الفصل: {selectedStudent?.classroom}
+              </p>
             </div>
-          )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {daysOfWeek.map(dayName => {
+              const dayLessons = weeklySchedule
+                .filter(s => s.dayName === dayName || s.dayOfWeek === dayName)
+                .sort((a, b) => a.periodNumber - b.periodNumber);
+
+              return (
+                <div key={dayName} className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 space-y-2 text-right">
+                  <div className="p-2 rounded-xl bg-[#008e8b] text-white font-black text-xs text-center shadow-xs">
+                    {dayName}
+                  </div>
+
+                  <div className="space-y-2 mt-2">
+                    {dayLessons.length > 0 ? (
+                      dayLessons.map(lesson => (
+                        <div
+                          key={lesson.id}
+                          className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs shadow-2xs"
+                        >
+                          <div className="flex items-center justify-between font-bold">
+                            <span className="text-[#008e8b]">حصة {lesson.periodNumber}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {lesson.startTime || ''}
+                            </span>
+                          </div>
+                          <div className="font-black text-slate-900 mt-1">{lesson.subject}</div>
+                          {lesson.teacherName && (
+                            <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                              المعلم: {lesson.teacherName}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-4 text-center text-[11px] text-slate-400">لا توجد حصص</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'homework' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-[#008e8b]" />
+              <span>دليل الواجبات والتكليفات المدرسية</span>
+            </h3>
+            <span className="text-xs font-bold text-slate-500">
+              إجمالي {studentHomeworks.length} واجب
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {studentHomeworks.length > 0 ? (
+              studentHomeworks.map(hw => (
+                <div
+                  key={hw.id}
+                  className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-right hover:border-slate-300 transition-all"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-sm font-black text-slate-900">{hw.title}</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-[#008e8b] border border-teal-100">
+                          {hw.subject}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          تاريخ الإسناد: {hw.assignedDate}
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="px-2.5 py-1 rounded-xl text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                      موعد التسليم: {hw.dueDate}
+                    </span>
+                  </div>
+
+                  {hw.description && (
+                    <p className="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-xl border border-slate-100">
+                      {hw.description}
+                    </p>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="col-span-2 p-12 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl">
+                لا توجد واجبات معلنة حالياً.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'behavior' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Behavior Score Card */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-500" />
+              <span>بطاقة الانضباط السلوكي</span>
+            </h3>
+
+            {behaviorScore && (
+              <div className="p-6 bg-amber-50/60 border border-amber-200 rounded-3xl text-center space-y-2">
+                <div className="text-4xl font-black text-slate-900">
+                  {behaviorScore.currentScore} <span className="text-lg text-slate-400">/ 100</span>
+                </div>
+                <div className="text-xs font-black text-amber-800">
+                  التقييم: {behaviorScore.statusText}
+                </div>
+                <p className="text-[11px] text-slate-600 mt-2">
+                  يُمنح كل طالب رصيد 100 نقطة انضباط سنوياً، ويتم تطبيق الخصومات طبقاً للائحة الانضباط المدرسي المعتمدة.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Right 2 Columns: Violations & Positive Awards */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Positive Awards */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-3 text-right">
+              <h4 className="text-xs font-black text-emerald-800 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>شهادات التميز والشكر الممنوحة للطالب</span>
+              </h4>
+
+              {behaviorLedger.filter(l => l.points && l.points > 0).length > 0 ? (
+                <div className="space-y-2">
+                  {behaviorLedger
+                    .filter(l => l.points && l.points > 0)
+                    .map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <span className="font-bold text-emerald-950 block">
+                            {item.reason || 'تميز سلوكي'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">{item.date}</span>
+                        </div>
+                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-900 rounded-xl font-bold font-mono">
+                          +{item.points} نقاط
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl">
+                  لا توجد شهادات تميز مسجلة حديثاً.
+                </div>
+              )}
+            </div>
+
+            {/* Confirmed Violations */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-3 text-right">
+              <h4 className="text-xs font-black text-rose-800 flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-rose-600" />
+                <span>سجل المخالفات المعتمدة والخصومات</span>
+              </h4>
+
+              {behaviorViolations.length > 0 ? (
+                <div className="space-y-2">
+                  {behaviorViolations.map((vio, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3.5 bg-rose-50/50 border border-rose-200 rounded-2xl flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <span className="font-bold text-rose-950 block">{vio.violationName}</span>
+                        {vio.notes && <p className="text-[11px] text-slate-600 mt-0.5">{vio.notes}</p>}
+                        <span className="text-[10px] text-slate-400 font-mono">{vio.date}</span>
+                      </div>
+                      <span className="px-2.5 py-1 bg-rose-100 text-rose-900 rounded-xl font-bold font-mono">
+                        -{vio.pointsDeducted} نقاط
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 text-center text-xs text-emerald-700 bg-emerald-50/50 rounded-2xl font-bold">
+                  سجل الطالب نظيف تماماً من أي مخالفات معتمدة.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

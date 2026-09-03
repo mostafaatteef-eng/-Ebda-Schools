@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Calendar,
@@ -7,19 +7,25 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  FileCheck,
+  FileText,
   Filter,
+  Layers,
   Plus,
   Search,
   Sparkles,
   Trash2,
   UserCheck,
+  Users,
   UserX,
   X,
-  XCircle
+  XCircle,
 } from 'lucide-react';
-import { Employee, LeaveRecord, LeaveStatus, LeaveType, SystemSettings, User } from '../../types';
+import { Employee, EmployeePermissionRecord, LeaveRecord, LeaveStatus, LeaveType, SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
+import { HRPayrollService } from '../../services/hrPayrollService';
+import { MasterDataService } from '../../services/masterDataService';
 
 interface LeavesViewProps {
   employees: Employee[];
@@ -32,22 +38,51 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
   employees,
   leaves,
   settings,
-  currentUser
+  currentUser,
 }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'leaves' | 'permissions'>('leaves');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('الكل');
   const [typeFilter, setTypeFilter] = useState<string>('الكل');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
 
-  // Form Fields
-  const [empId, setEmpId] = useState(employees[0]?.id || '');
+  // Leave Form State
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [leaveEmpId, setLeaveEmpId] = useState(employees[0]?.id || '');
   const [leaveType, setLeaveType] = useState<LeaveType>('سنوية');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const [reason, setReason] = useState('');
+  const [leaveReason, setLeaveReason] = useState('');
+  const [leaveErrorMessage, setLeaveErrorMessage] = useState('');
+
+  // Permission Form State
+  const [permissions, setPermissions] = useState<EmployeePermissionRecord[]>(() => HRPayrollService.getPermissions());
+  const [isPermModalOpen, setIsPermModalOpen] = useState(false);
+  const [permEmpId, setPermEmpId] = useState(employees[0]?.id || '');
+  const [permDate, setPermDate] = useState(new Date().toISOString().split('T')[0]);
+  const [permType, setPermType] = useState('إذن خروج مؤقت');
+  const [permStartTime, setPermStartTime] = useState('10:00');
+  const [permEndTime, setPermEndTime] = useState('12:00');
+  const [permDurationHours, setPermDurationHours] = useState(2);
+  const [permReason, setPermReason] = useState('');
+  const [permErrorMessage, setPermErrorMessage] = useState('');
 
   const canApprove = currentUser?.role === 'Admin' || currentUser?.role === 'HR';
+
+  // Dynamic Leave Types from Master Data & Settings
+  const dynamicLeaveTypes = useMemo(() => {
+    const mdItems = MasterDataService.getMasterData('HR', 'LEAVE_TYPES');
+    if (mdItems.length > 0) {
+      return mdItems.map(m => m.nameAr);
+    }
+    return ['سنوية', 'مرضية', 'عارضة', 'بدون راتب', 'أخرى'];
+  }, []);
+
+  const permissionTypes = ['إذن خروج مؤقت', 'إذن تأخير صباحي', 'مهمة عمل رسمية', 'إذن انصراف مبكر'];
+
+  // Refresh permissions on update
+  const refreshPermissions = () => {
+    setPermissions(HRPayrollService.getPermissions());
+  };
 
   const calculateDaysCount = (start: string, end: string) => {
     if (!start || !end) return 1;
@@ -60,40 +95,70 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
 
   const daysCount = calculateDaysCount(startDate, endDate);
 
-  const filteredLeaves = leaves.filter(l => {
-    const matchStatus = statusFilter === 'الكل' || l.status === statusFilter;
-    const matchType = typeFilter === 'الكل' || l.leaveType === typeFilter;
-    const q = (searchQuery || '').trim().toLowerCase();
-    const matchSearch =
-      !q ||
-      (l.employeeName || '').toLowerCase().includes(q) ||
-      (l.employeeId || '').toLowerCase().includes(q) ||
-      (l.department || '').toLowerCase().includes(q) ||
-      (l.leaveType || '').toLowerCase().includes(q) ||
-      (l.reason || '').toLowerCase().includes(q);
-    return matchStatus && matchType && matchSearch;
-  });
+  const filteredLeaves = useMemo(() => {
+    return leaves.filter(l => {
+      const matchStatus = statusFilter === 'الكل' || l.status === statusFilter;
+      const matchType = typeFilter === 'الكل' || l.leaveType === typeFilter;
+      const q = (searchQuery || '').trim().toLowerCase();
+      const matchSearch =
+        !q ||
+        (l.employeeName || '').toLowerCase().includes(q) ||
+        (l.employeeId || '').toLowerCase().includes(q) ||
+        (l.department || '').toLowerCase().includes(q) ||
+        (l.leaveType || '').toLowerCase().includes(q) ||
+        (l.reason || '').toLowerCase().includes(q);
+      return matchStatus && matchType && matchSearch;
+    });
+  }, [leaves, statusFilter, typeFilter, searchQuery]);
 
-  const handleOpenModal = () => {
-    setEmpId(employees[0]?.id || '');
+  const filteredPermissions = useMemo(() => {
+    return permissions.filter(p => {
+      const matchStatus = statusFilter === 'الكل' || p.status === statusFilter;
+      const matchType = typeFilter === 'الكل' || p.permissionType === typeFilter;
+      const q = (searchQuery || '').trim().toLowerCase();
+      const matchSearch =
+        !q ||
+        (p.employeeName || '').toLowerCase().includes(q) ||
+        (p.employeeId || '').toLowerCase().includes(q) ||
+        (p.department || '').toLowerCase().includes(q) ||
+        (p.permissionType || '').toLowerCase().includes(q) ||
+        (p.reason || '').toLowerCase().includes(q);
+      return matchStatus && matchType && matchSearch;
+    });
+  }, [permissions, statusFilter, typeFilter, searchQuery]);
+
+  const handleOpenLeaveModal = () => {
+    setLeaveEmpId(employees[0]?.id || '');
     setLeaveType('سنوية');
     setStartDate(new Date().toISOString().split('T')[0]);
     setEndDate(new Date().toISOString().split('T')[0]);
-    setReason('');
-    setErrorMessage('');
-    setIsModalOpen(true);
+    setLeaveReason('');
+    setLeaveErrorMessage('');
+    setIsLeaveModalOpen(true);
+  };
+
+  const handleOpenPermModal = () => {
+    setPermEmpId(employees[0]?.id || '');
+    setPermDate(new Date().toISOString().split('T')[0]);
+    setPermType('إذن خروج مؤقت');
+    setPermStartTime('10:00');
+    setPermEndTime('12:00');
+    setPermDurationHours(2);
+    setPermReason('');
+    setPermErrorMessage('');
+    setIsPermModalOpen(true);
   };
 
   const handleSaveLeave = (e: React.FormEvent) => {
     e.preventDefault();
-    const emp = employees.find(x => x.id === empId);
+    const emp = employees.find(x => x.id === leaveEmpId);
     if (!emp) {
-      setErrorMessage('الموظف غير محدد');
+      setLeaveErrorMessage('الموظف غير محدد');
       return;
     }
 
     if (endDate < startDate) {
-      setErrorMessage('تاريخ نهاية الإجازة لا يمكن أن يكون قبل تاريخ البداية');
+      setLeaveErrorMessage('تاريخ نهاية الإجازة لا يمكن أن يكون قبل تاريخ البداية');
       return;
     }
 
@@ -107,368 +172,641 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
       endDate,
       daysCount,
       status: canApprove ? 'مقبولة' : 'معلقة',
-      reason,
+      reason: leaveReason,
       approvedBy: canApprove ? currentUser?.fullName : undefined,
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: new Date().toISOString().split('T')[0],
     };
 
     const res = storageService.saveLeave(newLeave);
     if (res.success) {
-      setIsModalOpen(false);
+      setIsLeaveModalOpen(false);
     } else {
-      setErrorMessage(res.message || 'حدث خطأ');
+      setLeaveErrorMessage(res.message || 'حدث خطأ أثناء حفظ الإجازة');
     }
   };
 
-  const handleUpdateStatus = (leave: LeaveRecord, newStatus: LeaveStatus) => {
+  const handleSavePermission = (e: React.FormEvent) => {
+    e.preventDefault();
+    const emp = employees.find(x => x.id === permEmpId);
+    if (!emp) {
+      setPermErrorMessage('الموظف غير محدد');
+      return;
+    }
+
+    const res = HRPayrollService.savePermission(
+      {
+        employeeId: emp.id,
+        employeeName: emp.name,
+        department: emp.department,
+        date: permDate,
+        permissionType: permType,
+        startTime: permStartTime,
+        endTime: permEndTime,
+        durationHours: Number(permDurationHours) || 2,
+        reason: permReason,
+        status: canApprove ? 'مقبولة' : 'معلقة',
+        approvedBy: canApprove ? currentUser?.fullName : undefined,
+      },
+      currentUser
+    );
+
+    if (res.success) {
+      refreshPermissions();
+      setIsPermModalOpen(false);
+    } else {
+      setPermErrorMessage(res.message || 'حدث خطأ أثناء حفظ الإذن');
+    }
+  };
+
+  const handleApprovePerm = (permId: string) => {
+    HRPayrollService.approvePermission(permId, currentUser);
+    refreshPermissions();
+  };
+
+  const handleRejectPerm = (permId: string) => {
+    const reason = window.prompt('يرجى كتابة سبب رفض الإذن:');
+    if (reason !== null) {
+      HRPayrollService.rejectPermission(permId, reason || 'لم يتم استيفاء شروط الإذن', currentUser);
+      refreshPermissions();
+    }
+  };
+
+  const handleDeletePerm = (permId: string) => {
+    if (window.confirm('هل أنت متأكد من حذف سجل الإذن؟')) {
+      HRPayrollService.deletePermission(permId);
+      refreshPermissions();
+    }
+  };
+
+  const handleUpdateLeaveStatus = (leave: LeaveRecord, newStatus: LeaveStatus) => {
     storageService.saveLeave({
       ...leave,
       status: newStatus,
-      approvedBy: newStatus === 'مقبولة' ? currentUser?.fullName : undefined
+      approvedBy: newStatus === 'مقبولة' ? currentUser?.fullName : undefined,
     });
   };
 
-  const handleDelete = (leaveId: string) => {
+  const handleDeleteLeave = (leaveId: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا السجل؟')) {
       storageService.deleteLeave(leaveId);
     }
   };
 
-  const getStatusBadge = (status: LeaveStatus) => {
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case 'مقبولة':
-        return <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">مقبولة</span>;
+        return (
+          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+            مقبولة ومعتمدة
+          </span>
+        );
       case 'معلقة':
-        return <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">معلقة للمراجعة</span>;
+        return (
+          <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+            معلقة للمراجعة
+          </span>
+        );
       case 'مرفوضة':
-        return <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">مرفوضة</span>;
+        return (
+          <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+            مرفوضة
+          </span>
+        );
+      default:
+        return null;
     }
   };
 
   // KPIs
-  const pendingCount = leaves.filter(l => l.status === 'معلقة').length;
-  const approvedCount = leaves.filter(l => l.status === 'مقبولة').length;
+  const pendingLeaves = leaves.filter(l => l.status === 'معلقة').length;
+  const approvedLeaves = leaves.filter(l => l.status === 'مقبولة').length;
+  const pendingPerms = permissions.filter(p => p.status === 'معلقة').length;
+  const approvedPerms = permissions.filter(p => p.status === 'مقبولة').length;
 
   return (
-    <div className="space-y-5">
-      {/* Header Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <UserCheck className="w-5 h-5 text-indigo-600" />
-            إدارة طلبات الإجازات والأذونات
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-[#008e8b]/10 text-[#008e8b] flex items-center justify-center">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <span>إدارة الإجازات والأذونات (Leaves & Permissions Workflow)</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            متابعة أرصدة الإجازات السنوية والمرضية واعتماد طلبات الموظفين
+            متابعة واعتماد طلبات الإجازات الرسمية والأذونات وتصاريح العمل وربطها التلقائي بالحضور والرواتب
           </p>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2">
+          {activeSubTab === 'leaves' ? (
+            <button
+              onClick={handleOpenLeaveModal}
+              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>تقديم طلب إجازة</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleOpenPermModal}
+              className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>تقديم طلب إذن / تصريح</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => ExportService.exportLeavesToExcel(leaves)}
+            className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-2xl transition-colors flex items-center gap-1.5 border border-slate-200 shadow-xs"
+          >
+            <Download className="w-4 h-4 text-slate-600" />
+            <span>تصدير السجلات</span>
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-bold text-slate-400 block mb-1">إجازات معتمدة</span>
+          <div className="text-xl font-bold font-mono text-emerald-600">{approvedLeaves}</div>
+        </div>
+        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-bold text-slate-400 block mb-1">إجازات قيد المراجعة</span>
+          <div className="text-xl font-bold font-mono text-amber-600">{pendingLeaves}</div>
+        </div>
+        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-bold text-slate-400 block mb-1">أذونات وتصاريح معتمدة</span>
+          <div className="text-xl font-bold font-mono text-indigo-600">{approvedPerms}</div>
+        </div>
+        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-bold text-slate-400 block mb-1">أذونات قيد المراجعة</span>
+          <div className="text-xl font-bold font-mono text-amber-600">{pendingPerms}</div>
+        </div>
+      </div>
+
+      {/* Sub-Tabs Switcher */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
         <button
-          id="btn-add-leave-request"
-          onClick={handleOpenModal}
-          className="text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow-md transition-colors flex items-center gap-1.5"
+          onClick={() => setActiveSubTab('leaves')}
+          className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeSubTab === 'leaves'
+              ? 'bg-[#008e8b] text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          تقديم طلب إجازة جديد
+          <Calendar className="w-4 h-4" />
+          <span>سجل الإجازات الرسمية ({leaves.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('permissions')}
+          className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeSubTab === 'permissions'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>سجل الأذونات والتصاريح ({permissions.length})</span>
         </button>
       </div>
 
-      {/* Balance Policy Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-slate-500">رصيد الإجازات السنوية</span>
-            <div className="text-2xl font-bold text-slate-800 mt-1">
-              {settings.annualLeaveAllowance} <span className="text-xs font-normal text-slate-500">يوم/سنة</span>
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center font-bold text-xs">
-            سنوية
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-slate-500">رصيد الإجازات المرضية</span>
-            <div className="text-2xl font-bold text-slate-800 mt-1">
-              {settings.sickLeaveAllowance} <span className="text-xs font-normal text-slate-500">يوم/سنة</span>
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
-            مرضية
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-slate-500">طلبات معلقة تنتظر الموافقة</span>
-            <div className="text-2xl font-bold text-orange-600 mt-1">{pendingCount}</div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center font-bold text-xs">
-            مراجعة
-          </div>
-        </div>
-      </div>
-
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="w-full sm:w-80 relative">
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
           <input
             type="text"
-            placeholder="بحث بالاسم أو السبب..."
+            placeholder="بحث بالاسم، الكود، أو السبب..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pr-9 pl-3 py-2 text-slate-900 focus:outline-indigo-600"
+            className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-2 text-slate-900 focus:outline-hidden focus:border-[#008e8b]"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-700">
-          <div className="flex items-center gap-1">
-            <span>الحالة:</span>
+        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-700">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold">حالة الطلب:</span>
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-indigo-600"
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden"
             >
               <option value="الكل">الكل</option>
-              <option value="معلقة">معلقة</option>
-              <option value="مقبولة">مقبولة</option>
+              <option value="معلقة">معلقة للمراجعة</option>
+              <option value="مقبولة">مقبولة ومعتمدة</option>
               <option value="مرفوضة">مرفوضة</option>
             </select>
           </div>
+        </div>
+      </div>
 
-          <div className="flex items-center gap-1 mr-2">
-            <span>نوع الإجازة:</span>
-            <select
-              value={typeFilter}
-              onChange={e => setTypeFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-indigo-600"
-            >
-              <option value="الكل">الكل</option>
-              <option value="سنوية">سنوية</option>
-              <option value="مرضية">مرضية</option>
-              <option value="طارئة">طارئة</option>
-              <option value="بدون راتب">بدون راتب</option>
-              <option value="أمومة/أبوة">أمومة/أبوة</option>
-            </select>
+      {/* Content View Based on Sub-tab */}
+      {activeSubTab === 'leaves' ? (
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-right">
+              <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="py-3.5 px-4">رقم السجل</th>
+                  <th className="py-3.5 px-4">الموظف / المعلم</th>
+                  <th className="py-3.5 px-4">نوع الإجازة</th>
+                  <th className="py-3.5 px-4">الفترة</th>
+                  <th className="py-3.5 px-4">عدد الأيام</th>
+                  <th className="py-3.5 px-4">السبب / الملاحظات</th>
+                  <th className="py-3.5 px-4">الحالة</th>
+                  {canApprove && <th className="py-3.5 px-4 text-center">إجراءات الاعتماد</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredLeaves.length === 0 ? (
+                  <tr>
+                    <td colSpan={canApprove ? 8 : 7} className="py-12 text-center text-slate-400">
+                      لا توجد سجلات إجازات تطابق البحث
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLeaves.map(leave => (
+                    <tr key={leave.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700">{leave.id}</td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-800">{leave.employeeName}</div>
+                        <div className="text-[10px] text-slate-400">{leave.department}</div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-block px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold text-[11px]">
+                          {leave.leaveType}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600">
+                        {leave.startDate} ⬅ {leave.endDate}
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-800">{leave.daysCount} يوم</td>
+                      <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">{leave.reason || '-'}</td>
+                      <td className="py-3.5 px-4">{getStatusBadge(leave.status)}</td>
+                      {canApprove && (
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {leave.status === 'معلقة' && (
+                              <>
+                                <button
+                                  onClick={() => handleUpdateLeaveStatus(leave, 'مقبولة')}
+                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  title="قبول واعتماد"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateLeaveStatus(leave, 'مرفوضة')}
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="رفض"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => handleDeleteLeave(leave.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="حذف"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
-
-      {/* Leaves Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-right">
-            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="py-3.5 px-4">رقم الإجازة</th>
-                <th className="py-3.5 px-4">الموظف</th>
-                <th className="py-3.5 px-4">القسم</th>
-                <th className="py-3.5 px-4">نوع الإجازة</th>
-                <th className="py-3.5 px-4">من تاريخ</th>
-                <th className="py-3.5 px-4">إلى تاريخ</th>
-                <th className="py-3.5 px-4 text-center">المدة</th>
-                <th className="py-3.5 px-4">السبب / المبرر</th>
-                <th className="py-3.5 px-4">الحالة</th>
-                {canApprove && <th className="py-3.5 px-4 text-center">إجراءات</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredLeaves.length === 0 ? (
+      ) : (
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-right">
+              <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                 <tr>
-                  <td colSpan={10} className="py-16 text-center">
-                    <div className="flex flex-col items-center justify-center space-y-3 max-w-sm mx-auto">
-                      <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-                        <Calendar className="w-6 h-6" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-bold text-slate-800">
-                          {leaves.length === 0 ? 'لا توجد طلبات إجازة مسجلة بعد' : 'لا توجد نتائج تطابق البحث'}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {leaves.length === 0
-                            ? 'يمكنك إضافة طلب إجازة جديد للموظف أو اعتماد الطلبات الواردة.'
-                            : 'جرّب تغيير كلمات البحث أو إعادة تعيين الفلاتر.'}
-                        </p>
-                      </div>
-                      {leaves.length === 0 && employees.length > 0 && (
-                        <button
-                          onClick={handleOpenModal}
-                          className="mt-2 text-xs font-bold bg-[#008e8b] hover:bg-[#007b78] text-white px-4 py-2 rounded-xl transition-all shadow-sm inline-flex items-center gap-1.5"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>تقديم أول طلب إجازة</span>
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                  <th className="py-3.5 px-4">رقم الإذن</th>
+                  <th className="py-3.5 px-4">الموظف / المعلم</th>
+                  <th className="py-3.5 px-4">نوع الإذن</th>
+                  <th className="py-3.5 px-4">تاريخ الإذن</th>
+                  <th className="py-3.5 px-4">الفترة الزمنية</th>
+                  <th className="py-3.5 px-4">المدة</th>
+                  <th className="py-3.5 px-4">السبب</th>
+                  <th className="py-3.5 px-4">الحالة</th>
+                  {canApprove && <th className="py-3.5 px-4 text-center">إجراءات الاعتماد</th>}
                 </tr>
-              ) : (
-                filteredLeaves.map(lv => (
-                  <tr key={lv.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{lv.id}</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-800">
-                      <div>{lv.employeeName}</div>
-                      <div className="text-[10px] font-mono text-slate-400 font-normal">{lv.employeeId}</div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredPermissions.length === 0 ? (
+                  <tr>
+                    <td colSpan={canApprove ? 9 : 8} className="py-12 text-center text-slate-400">
+                      لا توجد طلبات أذونات تطابق البحث
                     </td>
-                    <td className="py-3.5 px-4 text-slate-600">{lv.department}</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-800">{lv.leaveType}</td>
-                    <td className="py-3.5 px-4 font-mono text-slate-700">{lv.startDate}</td>
-                    <td className="py-3.5 px-4 font-mono text-slate-700">{lv.endDate}</td>
-                    <td className="py-3.5 px-4 text-center font-bold text-indigo-600">{lv.daysCount} يوم</td>
-                    <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">{lv.reason || '-'}</td>
-                    <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        lv.status === 'مقبولة'
-                          ? 'bg-green-50 text-green-700'
-                          : lv.status === 'معلقة'
-                          ? 'bg-orange-50 text-orange-700'
-                          : 'bg-red-50 text-red-700'
-                      }`}>
-                        {lv.status === 'مقبولة' ? 'مقبولة' : lv.status === 'معلقة' ? 'معلقة للمراجعة' : 'مرفوضة'}
-                      </span>
-                    </td>
-                    {canApprove && (
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {lv.status === 'معلقة' && (
-                            <>
-                              <button
-                                onClick={() => handleUpdateStatus(lv, 'مقبولة')}
-                                className="px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition-colors"
-                                title="قبول الطلب"
-                              >
-                                قبول
-                              </button>
-                              <button
-                                onClick={() => handleUpdateStatus(lv, 'مرفوضة')}
-                                className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition-colors"
-                                title="رفض الطلب"
-                              >
-                                رفض
-                              </button>
-                            </>
-                          )}
-                          <button
-                            onClick={() => handleDelete(lv.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="حذف الطلب"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredPermissions.map(perm => (
+                    <tr key={perm.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700">{perm.id}</td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-800">{perm.employeeName}</div>
+                        <div className="text-[10px] text-slate-400">{perm.department}</div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-block px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold text-[11px]">
+                          {perm.permissionType}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-slate-700">{perm.date}</td>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600">
+                        {perm.startTime} - {perm.endTime}
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-800">{perm.durationHours} ساعة</td>
+                      <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">{perm.reason || '-'}</td>
+                      <td className="py-3.5 px-4">{getStatusBadge(perm.status)}</td>
+                      {canApprove && (
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {perm.status === 'معلقة' && (
+                              <>
+                                <button
+                                  onClick={() => handleApprovePerm(perm.id)}
+                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  title="قبول واعتماد"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleRejectPerm(perm.id)}
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="رفض"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => handleDeletePerm(perm.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="حذف"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Add Leave Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-scale-up">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-800">طلب إجازة جديد</h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
-              >
+      {/* Leave Modal */}
+      {isLeaveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden my-8">
+            <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-[#008e8b]" />
+                <span>تقديم طلب إجازة رسمي</span>
+              </h3>
+              <button onClick={() => setIsLeaveModalOpen(false)} className="text-slate-400 hover:text-slate-700">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {errorMessage && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg font-medium">
-                {errorMessage}
-              </div>
-            )}
+            <form onSubmit={handleSaveLeave} className="p-6 space-y-4">
+              {leaveErrorMessage && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{leaveErrorMessage}</span>
+                </div>
+              )}
 
-            <form onSubmit={handleSaveLeave} className="mt-4 space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">الموظف:</label>
-                <select
-                  value={empId}
-                  onChange={e => setEmpId(e.target.value)}
-                  className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-indigo-600"
-                >
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.id} - {emp.name} ({emp.department})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">نوع الإجازة:</label>
-                <select
-                  value={leaveType}
-                  onChange={e => setLeaveType(e.target.value as LeaveType)}
-                  className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-indigo-600"
-                >
-                  <option value="سنوية">سنوية (رصيد متاح: {settings.annualLeaveAllowance} يوم)</option>
-                  <option value="مرضية">مرضية (رصيد متاح: {settings.sickLeaveAllowance} يوم)</option>
-                  <option value="طارئة">طارئة (رصيد متاح: {settings.emergencyLeaveAllowance} يوم)</option>
-                  <option value="بدون راتب">بدون راتب</option>
-                  <option value="أمومة/أبوة">أمومة/أبوة</option>
-                  <option value="أخرى">أخرى</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-4 text-xs">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">تاريخ البدء:</label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={e => setStartDate(e.target.value)}
-                    className="w-full text-xs font-mono font-semibold bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-indigo-600"
+                  <label className="font-bold text-slate-700 block mb-1">اختر الموظف / المعلم *</label>
+                  <select
+                    value={leaveEmpId}
+                    onChange={e => setLeaveEmpId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
+                  >
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.id} - {emp.department})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">نوع الإجازة *</label>
+                  <select
+                    value={leaveType}
+                    onChange={e => setLeaveType(e.target.value as LeaveType)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
+                  >
+                    {dynamicLeaveTypes.map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">تاريخ البداية *</label>
+                    <input
+                      type="date"
+                      required
+                      value={startDate}
+                      onChange={e => setStartDate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">تاريخ النهاية *</label>
+                    <input
+                      type="date"
+                      required
+                      value={endDate}
+                      onChange={e => setEndDate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-600 flex items-center justify-between">
+                  <span>إجمالي عدد الأيام المحتسبة:</span>
+                  <span className="font-bold text-[#008e8b] font-mono text-sm">{daysCount} يوم</span>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">سبب الإجازة / الملاحظات</label>
+                  <textarea
+                    value={leaveReason}
+                    onChange={e => setLeaveReason(e.target.value)}
+                    rows={3}
+                    placeholder="اكتب سبب الإجازة إن وجد..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-800"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">تاريخ الانتهاء:</label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={e => setEndDate(e.target.value)}
-                    className="w-full text-xs font-mono font-semibold bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-indigo-600"
-                  />
-                </div>
               </div>
 
-              <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-lg text-center text-xs font-bold text-indigo-700">
-                إجمالي الأيام المطلوبة: {daysCount} يوم
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">المبرر والسبب:</label>
-                <textarea
-                  rows={3}
-                  value={reason}
-                  onChange={e => setReason(e.target.value)}
-                  placeholder="اكتب سبب طلب الإجازة..."
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-indigo-600"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 -mx-6 -mb-6 mt-4">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="text-xs font-semibold px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
+                  onClick={() => setIsLeaveModalOpen(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-bold"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="text-xs font-semibold px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
+                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md"
                 >
-                  إرسال الطلب
+                  حفظ الطلب
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Permission Modal */}
+      {isPermModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden my-8">
+            <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-indigo-600" />
+                <span>تقديم طلب إذن / تصريح عمل</span>
+              </h3>
+              <button onClick={() => setIsPermModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePermission} className="p-6 space-y-4">
+              {permErrorMessage && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{permErrorMessage}</span>
+                </div>
+              )}
+
+              <div className="space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">اختر الموظف / المعلم *</label>
+                  <select
+                    value={permEmpId}
+                    onChange={e => setPermEmpId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
+                  >
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.id} - {emp.department})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">نوع التصريح *</label>
+                    <select
+                      value={permType}
+                      onChange={e => setPermType(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
+                    >
+                      {permissionTypes.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">تاريخ الإذن *</label>
+                    <input
+                      type="date"
+                      required
+                      value={permDate}
+                      onChange={e => setPermDate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">من الساعة *</label>
+                    <input
+                      type="time"
+                      value={permStartTime}
+                      onChange={e => setPermStartTime(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">إلى الساعة *</label>
+                    <input
+                      type="time"
+                      value={permEndTime}
+                      onChange={e => setPermEndTime(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">المدة (ساعات)</label>
+                    <input
+                      type="number"
+                      value={permDurationHours}
+                      onChange={e => setPermDurationHours(Number(e.target.value))}
+                      min={0.5}
+                      step={0.5}
+                      max={8}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">سبب الإذن / المهمة الرسمية *</label>
+                  <textarea
+                    required
+                    value={permReason}
+                    onChange={e => setPermReason(e.target.value)}
+                    rows={3}
+                    placeholder="اكتب سبب طلب الإذن أو جهة المهمة الرسمية..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 -mx-6 -mb-6 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsPermModalOpen(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-bold"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md"
+                >
+                  حفظ وتقديم الإذن
                 </button>
               </div>
             </form>

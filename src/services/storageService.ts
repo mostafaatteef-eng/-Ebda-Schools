@@ -22,6 +22,7 @@ import {
   DepartmentItem,
   Employee,
   GradeItem,
+  Homework,
   JobTitleItem,
   LeaveRecord,
   LeaveType,
@@ -90,6 +91,9 @@ import { generateClientSessionToken, hashPasswordSHA256, hashPlainSHA256 } from 
 import { buildUnifiedAttendanceRecord, calculateAttendanceMetrics } from '../utils/attendanceUtils';
 import { computeAttendanceDayReview, calculateStudentLateMinutes } from '../utils/attendanceEngine';
 import { SyncQueueService } from './syncQueueService';
+import { ParentService } from './parentService';
+import { NotificationService } from './notificationService';
+import { PayrollAttendanceSnapshot } from '../types_extended';
 
 const STORAGE_KEYS = {
   SETTINGS: 'ntss_school_settings_v3',
@@ -115,12 +119,16 @@ const STORAGE_KEYS = {
   LESSON_INSTANCES: 'ntss_lesson_instances_v3',
   LESSON_CONTENT: 'ntss_lesson_content_v3',
   PAYROLL: 'ntss_payroll_v3',
+  PAYROLL_SNAPSHOTS: 'ntss_payroll_snapshots_v3',
+  SYNC_QUEUE: 'ntss_sync_queue_v3',
+  NOTIFICATIONS: 'ntss_notifications_v3',
   ACADEMIC_YEARS: 'ntss_academic_years_v3',
   STUDENT_ENROLLMENTS: 'ntss_student_enrollments_v3',
   STUDENT_TRANSFERS: 'ntss_student_transfers_v3',
   PROMOTION_RULES: 'ntss_promotion_rules_v3',
   PARENT_COMMUNICATIONS: 'ntss_parent_communications_v3',
   LOCATIONS: 'ntss_locations_v3',
+  HOMEWORKS: 'ntss_homeworks_v3',
 };
 
 const DEFAULT_BACKEND_URL =
@@ -1606,6 +1614,59 @@ class StorageService {
     this.pushPost('saveLessonContent', prepared).catch(() => {});
   }
 
+  // ---------------- Homework Engine ----------------
+  public getHomeworks(): Homework[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.HOMEWORKS);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveHomework(hw: Partial<Homework>): Homework {
+    const list = this.getHomeworks();
+    const idx = list.findIndex(h => h.id === hw.id);
+    const now = getCairoNowISO();
+    const user = this.getCurrentUser();
+
+    const prepared: Homework = {
+      id: hw.id || `HW-${Date.now()}`,
+      lessonInstanceId: hw.lessonInstanceId,
+      scheduleItemId: hw.scheduleItemId,
+      teacherId: hw.teacherId || user?.employeeId || user?.id || 'TCH',
+      teacherName: hw.teacherName || user?.fullName || 'المعلم',
+      subject: hw.subject || 'المادة',
+      grade: hw.grade || '',
+      classroom: hw.classroom || '',
+      title: hw.title || 'واجب مدرسي',
+      description: hw.description || '',
+      questions: hw.questions || '',
+      assignedDate: hw.assignedDate || now.split('T')[0],
+      dueDate: hw.dueDate || now.split('T')[0],
+      maxScore: hw.maxScore || 10,
+      status: (hw.status as any) || 'Published',
+      isVisibleToParent: hw.isVisibleToParent !== false,
+      isVisibleToStudent: hw.isVisibleToStudent !== false,
+      links: hw.links || [],
+      createdAt: hw.createdAt || now,
+      updatedAt: now,
+    };
+
+    if (idx >= 0) {
+      list[idx] = prepared;
+    } else {
+      list.unshift(prepared);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.HOMEWORKS, JSON.stringify(list));
+    this.logAudit('CREATE', 'LESSON', `تكليف واجب: ${prepared.title} - ${prepared.subject} (${prepared.classroom})`);
+    this.notifyChange();
+    this.pushPost('saveHomework', prepared).catch(() => {});
+    return prepared;
+  }
+
   // ---------------- Payroll Engine ----------------
   public getPayrollRecords(): PayrollRecord[] {
     const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL);
@@ -1638,6 +1699,13 @@ class StorageService {
     this.logAudit('UPDATE', 'PAYROLL', `تحديث مسير مرتب: ${prepared.employeeName} (${prepared.month}/${prepared.year})`);
     this.notifyChange();
     this.pushPost('savePayroll', prepared).catch(() => {});
+  }
+
+  public savePayrollRecordsBatch(records: PayrollRecord[]): void {
+    localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(records));
+    this.logAudit('UPDATE', 'PAYROLL', `تحديث دفعة مسير الرواتب (${records.length} سجل)`);
+    this.notifyChange();
+    this.pushPost('bulkSavePayroll', records).catch(() => {});
   }
 
   public generateMonthlyPayroll(month: number, year: number): PayrollRecord[] {
@@ -3154,6 +3222,43 @@ class StorageService {
     return { success: true, message: 'تم تسجيل سجل التواصل مع ولي الأمر بنجاح' };
   }
 
+  // ---------------- Payroll Attendance Snapshots ----------------
+  public getPayrollAttendanceSnapshots(): PayrollAttendanceSnapshot[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL_SNAPSHOTS);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  public savePayrollAttendanceSnapshot(snapshot: PayrollAttendanceSnapshot): void {
+    const list = this.getPayrollAttendanceSnapshots();
+    const idx = list.findIndex(s => s.id === snapshot.id);
+    if (idx >= 0) {
+      list[idx] = snapshot;
+    } else {
+      list.unshift(snapshot);
+    }
+    localStorage.setItem(STORAGE_KEYS.PAYROLL_SNAPSHOTS, JSON.stringify(list));
+    this.notifyChange();
+  }
+
+  // ---------------- Sync Queue & Notifications Accessors ----------------
+  public getSyncQueue(): any[] {
+    return SyncQueueService.getQueue();
+  }
+
+  public saveSyncQueue(queue: any[]): void {
+    localStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue));
+    this.notifyChange();
+  }
+
+  public getNotifications(): any[] {
+    return NotificationService.getNotifications();
+  }
+
   public getSyncQueueSummary() {
     return SyncQueueService.getQueueSummary();
   }
@@ -3194,6 +3299,21 @@ class StorageService {
         message: res.message || (res.status === 'success' ? 'Synced' : 'Failed to sync')
       };
     });
+  }
+
+  public getParentLinkedStudents(currentUser?: User | null) {
+    const user = currentUser || this.getCurrentUser();
+    return ParentService.getMyLinkedStudents(user);
+  }
+
+  public getParentDayView(studentId: string, targetDate?: string, currentUser?: User | null) {
+    const user = currentUser || this.getCurrentUser();
+    return ParentService.getParentDayView(studentId, targetDate, user);
+  }
+
+  public getParentAttendanceSummary(studentId: string, currentUser?: User | null) {
+    const user = currentUser || this.getCurrentUser();
+    return ParentService.getParentAttendanceSummary(studentId, user);
   }
 
   private async pushPost(action: string, data: any): Promise<void> {
