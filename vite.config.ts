@@ -3,9 +3,9 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
-  base: '/',
-  
+export default defineConfig(({ mode }) => ({
+  base: mode === 'production' ? '/-Ebda-Schools/' : '/',
+
   plugins: [
     react(),
     tailwindcss(),
@@ -22,4 +22,4 @@ export default defineConfig({
     host: '0.0.0.0',
     hmr: process.env.DISABLE_HMR !== 'true',
   },
-});
+}));
