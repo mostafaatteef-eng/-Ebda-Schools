@@ -13,6 +13,7 @@ import {
 import { storageService } from '../../services/storageService';
 import { SyncStatus, SystemSettings, User as UserType } from '../../types';
 import { getCairoCurrentTimeString, getEgyptianDayName, formatEgyptianDate, getCairoCurrentDate } from '../../utils/egyptianTime';
+import { getEgyptianRoleLabel } from '../../utils/localization';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { GlobalSearchModal } from '../search/GlobalSearchModal';
 import { SyncDetailsModal } from '../sync/SyncDetailsModal';
@@ -81,24 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
   const formattedDate = `${getEgyptianDayName(todayKey)}، ${formatEgyptianDate(todayKey)}`;
 
   const getRoleTitle = (role?: string) => {
-    switch (role) {
-      case 'Admin':
-        return 'مدير النظام والمدرسة';
-      case 'StudentAffairs':
-        return 'شؤون الطلاب والقيد';
-      case 'TeacherAffairs':
-        return 'شؤون المعلمين والدوام';
-      case 'Teacher':
-        return 'معلم / هيئة التدريس';
-      case 'SocialSpecialist':
-        return 'أخصائي اجتماعي وإرشاد';
-      case 'Parent':
-        return 'ولي أمر طالب';
-      case 'Viewer':
-        return 'مشاهد ومراقب';
-      default:
-        return 'مستخدم';
-    }
+    return getEgyptianRoleLabel(role);
   };
 
   const userInitial = currentUser?.fullName ? currentUser.fullName.charAt(0) : 'م';

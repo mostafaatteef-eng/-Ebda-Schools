@@ -36,7 +36,15 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
   onOpenLessonWorkspace,
 }) => {
   const [schedule, setSchedule] = useState<ScheduleItem[]>(() => storageService.getSchedule());
-  const [viewMode, setViewMode] = useState<'classroom' | 'teacher' | 'day'>('classroom');
+
+  const isTeacher = currentUser?.role === 'Teacher';
+  const canManageSchedule =
+    currentUser?.role === 'Admin' ||
+    currentUser?.role === 'Supervisor';
+
+  const [viewMode, setViewMode] = useState<'classroom' | 'teacher' | 'day'>(() =>
+    isTeacher ? 'teacher' : 'classroom'
+  );
 
   const settings = storageService.getSettings();
   const scheduleConfig = storageService.getScheduleConfig();
@@ -54,10 +62,34 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
     e => (e.department?.includes('تعليم') || e.department?.includes('تدريس') || e.jobTitle?.includes('معلم') || e.isTeacher) && e.status === 'Active'
   );
 
+  const teacherOwnId = useMemo(() => {
+    if (!currentUser) return '';
+    const match = teachers.find(t => t.id === currentUser.employeeId || t.id === currentUser.id);
+    return match?.id || currentUser.employeeId || currentUser.id || '';
+  }, [currentUser, teachers]);
+
+  const visibleTeachers = useMemo(() => {
+    if (isTeacher && teacherOwnId) {
+      const own = teachers.filter(t => t.id === teacherOwnId);
+      return own.length > 0 ? own : [{ id: teacherOwnId, name: currentUser?.fullName || 'المعلم' } as any];
+    }
+    return teachers;
+  }, [isTeacher, teacherOwnId, teachers, currentUser]);
+
+  // Stage Filter for Matrix Optimization
+  const [selectedStage, setSelectedStage] = useState<string>('all');
+
+  const filteredGrades = useMemo(() => {
+    if (selectedStage === 'all') return dynamicGrades;
+    return dynamicGrades.filter(g => g.stage === selectedStage);
+  }, [dynamicGrades, selectedStage]);
+
   // Selected filters for matrices
   const [selectedGrade, setSelectedGrade] = useState<string>(dynamicGrades[0]?.name || 'الصف الأول الثانوي');
   const [selectedClassroom, setSelectedClassroom] = useState<string>(dynamicClassrooms[0] || '1/1');
-  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(teachers[0]?.id || '');
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(() =>
+    isTeacher && teacherOwnId ? teacherOwnId : teachers[0]?.id || ''
+  );
   const [selectedDay, setSelectedDay] = useState<string>(daysOfWeek[0] || 'الأحد');
 
   // Conflict Audit State
@@ -110,6 +142,13 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
       i => (i.dayOfWeek === day || i.dayName === day) && i.periodNumber === periodNumber
     );
 
+    if (!canManageSchedule) {
+      if (existing && onOpenLessonWorkspace) {
+        onOpenLessonWorkspace(existing);
+      }
+      return;
+    }
+
     const timing = scheduleConfig.periodTimes?.[periodNumber - 1] || {
       startTime: `0${7 + periodNumber}:45`,
       endTime: `0${8 + periodNumber}:30`,
@@ -143,7 +182,7 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
 
   const handleSaveModalItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem) return;
+    if (!editingItem || !canManageSchedule) return;
 
     const teacherObj = teachers.find(t => t.id === editingItem.teacherId);
     const prepared: ScheduleItem = {
@@ -170,6 +209,8 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
         setModalConflictWarning(result.message || 'يوجد تضارب يمنع حفظ هذه الحصة!');
         return;
       }
+      setModalConflictWarning(result.message || 'حدث خطأ أثناء حفظ الحصة');
+      return;
     }
 
     setIsEditModalOpen(false);
@@ -177,8 +218,15 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
   };
 
   const handleDeleteItem = (id: string) => {
+    if (!canManageSchedule) {
+      return;
+    }
     if (window.confirm('هل أنت متأكد من إزالة هذه الحصة من الجدول؟')) {
-      storageService.deleteScheduleItem(id);
+      const res = ScheduleService.deleteScheduleItem(id);
+      if (!res.success) {
+        alert(res.message || 'فشل حذف الحصة.');
+        return;
+      }
       setIsEditModalOpen(false);
       reloadData();
     }
@@ -205,8 +253,8 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Conflict Diagnostic Banner */}
-      {conflictResult.hasConflicts && (
+      {/* Conflict Diagnostic Banner (Admin & Supervisor Only) */}
+      {canManageSchedule && conflictResult.hasConflicts && (
         <div
           className={`p-4 rounded-3xl border flex items-start justify-between gap-4 animate-fadeIn ${
             conflictResult.hasBlockingConflicts
@@ -288,11 +336,28 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
           {viewMode === 'classroom' && (
             <>
               <select
+                value={selectedStage}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedStage(val);
+                  const matching = val === 'all'
+                    ? dynamicGrades[0]?.name
+                    : dynamicGrades.find(g => g.stage === val)?.name;
+                  if (matching) setSelectedGrade(matching);
+                }}
+                className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+              >
+                <option value="all">جميع المراحل الدراسية</option>
+                <option value="المرحلة الابتدائية">المرحلة الابتدائية</option>
+                <option value="المرحلة الإعدادية">المرحلة الإعدادية</option>
+                <option value="المرحلة الثانوية">المرحلة الثانوية</option>
+              </select>
+              <select
                 value={selectedGrade}
                 onChange={e => setSelectedGrade(e.target.value)}
                 className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
               >
-                {dynamicGrades.map(g => (
+                {filteredGrades.map(g => (
                   <option key={g.id} value={g.name}>
                     {g.name}
                   </option>
@@ -316,9 +381,10 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
             <select
               value={selectedTeacherId}
               onChange={e => setSelectedTeacherId(e.target.value)}
-              className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 max-w-xs"
+              disabled={isTeacher}
+              className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 max-w-xs disabled:bg-slate-100 disabled:cursor-not-allowed"
             >
-              {teachers.map(t => (
+              {visibleTeachers.map(t => (
                 <option key={t.id} value={t.id}>
                   {t.name} ({t.jobTitle || 'معلم'})
                 </option>
@@ -366,7 +432,9 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
           <div>
             <h3 className="text-sm font-bold text-slate-900">{matrixTitle}</h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              انقر على أي حصة لتعديلها أو انقر على خانة فارغة لإضافة حصة جديدة
+              {canManageSchedule
+                ? 'انقر على أي حصة لتعديلها أو انقر على خانة فارغة لإضافة حصة جديدة'
+                : 'جدول الحصص الدراسية للقراءة وتسجيل الحضور اليومي'}
             </p>
           </div>
           <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
@@ -408,7 +476,9 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
                       <td
                         key={p}
                         onClick={() => handleCellClick(day, p)}
-                        className="p-2 border-l border-slate-200 align-top cursor-pointer hover:bg-emerald-50/40 transition-all group"
+                        className={`p-2 border-l border-slate-200 align-top transition-all ${
+                          canManageSchedule || cellItem ? 'cursor-pointer hover:bg-emerald-50/40' : 'cursor-default'
+                        }`}
                       >
                         {cellItem ? (
                           <div className="p-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-right space-y-1 group-hover:shadow-sm transition-all">
@@ -429,9 +499,13 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
                               </div>
                             )}
                           </div>
+                        ) : canManageSchedule ? (
+                          <div className="h-16 rounded-2xl border border-dashed border-slate-200 flex items-center justify-center text-slate-300 hover:border-emerald-300 hover:text-emerald-600 transition-all">
+                            <Plus className="w-4 h-4 opacity-40 hover:opacity-100" />
+                          </div>
                         ) : (
-                          <div className="h-16 rounded-2xl border border-dashed border-slate-200 flex items-center justify-center text-slate-300 group-hover:border-emerald-300 group-hover:text-emerald-600 transition-all">
-                            <Plus className="w-4 h-4 opacity-40 group-hover:opacity-100" />
+                          <div className="h-16 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-center text-slate-300 text-xs">
+                            —
                           </div>
                         )}
                       </td>

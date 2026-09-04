@@ -78,27 +78,33 @@ export class HRPayrollService {
     const list = this.getPermissions();
     const now = getCairoNowISO();
     const user = currentUser || storageService.getCurrentUser();
+    const isPermAdmin = user?.role === 'Admin' || user?.role === 'HR' || user?.role === 'TeacherAffairs';
 
-    if (!perm.employeeId || !perm.date) {
+    let targetEmpId = perm.employeeId;
+    if (user && !isPermAdmin) {
+      targetEmpId = user.employeeId || user.id;
+    }
+
+    if (!targetEmpId || !perm.date) {
       return { success: false, message: 'بيانات الموظف وتاريخ الإذن مطلوبة' };
     }
 
-    const emp = storageService.getEmployees().find(e => e.id === perm.employeeId);
+    const emp = storageService.getEmployees().find(e => e.id === targetEmpId || e.employeeNumber === targetEmpId);
     const durationHours = perm.durationHours || 2;
 
     const prepared: EmployeePermissionRecord = {
       id: perm.id || `PERM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      employeeId: perm.employeeId,
-      employeeName: perm.employeeName || emp?.name || 'موظف',
-      department: perm.department || emp?.department || '',
+      employeeId: targetEmpId,
+      employeeName: (user && !isPermAdmin) ? (emp?.name || user.fullName) : (perm.employeeName || emp?.name || 'موظف'),
+      department: (user && !isPermAdmin) ? (emp?.department || 'هيئة التدريس') : (perm.department || emp?.department || ''),
       date: perm.date,
       permissionType: perm.permissionType || 'إذن خروج مؤقت',
       startTime: perm.startTime || '10:00',
       endTime: perm.endTime || '12:00',
       durationHours,
       reason: perm.reason || 'ظرف شخصي',
-      status: perm.status || (user?.role === 'Admin' || user?.role === 'HR' ? 'مقبولة' : 'معلقة'),
-      approvedBy: perm.approvedBy || (user?.role === 'Admin' || user?.role === 'HR' ? user.fullName : undefined),
+      status: isPermAdmin ? (perm.status || 'مقبولة') : 'معلقة',
+      approvedBy: isPermAdmin ? (perm.approvedBy || user?.fullName) : undefined,
       createdAt: perm.createdAt || now,
     };
 

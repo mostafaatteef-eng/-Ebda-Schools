@@ -9,6 +9,11 @@ import {
   User,
 } from './types';
 import { storageService } from './services/storageService';
+import {
+  canAccessTab,
+  clearPreviousNavigationState,
+  resolveDefaultRouteForCurrentUser,
+} from './utils/navigation';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { DashboardView } from './components/dashboard/DashboardView';
@@ -40,7 +45,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
   const [activeTab, setActiveTab] = useState<string>(() => {
     const user = storageService.getCurrentUser();
-    return user?.role === 'Parent' ? 'parent_day_view' : 'dashboard';
+    return resolveDefaultRouteForCurrentUser(user);
   });
   const [employees, setEmployees] = useState<Employee[]>(() => storageService.getEmployees());
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => storageService.getAttendance());
@@ -63,22 +68,40 @@ export default function App() {
       setUsers(storageService.getUsers());
       setAuditLogs(storageService.getAuditLogs());
       setSyncState(storageService.getSyncState());
-      setCurrentUser(storageService.getCurrentUser());
+      const updatedUser = storageService.getCurrentUser();
+      setCurrentUser(updatedUser);
+      if (updatedUser && !canAccessTab(updatedUser, activeTab)) {
+        setActiveTab(resolveDefaultRouteForCurrentUser(updatedUser));
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [activeTab]);
+
+  const handleLoginSuccess = (user: User) => {
+    clearPreviousNavigationState();
+    storageService.setCurrentUser(user);
+    setCurrentUser(user);
+    const defaultRoute = resolveDefaultRouteForCurrentUser(user);
+    setActiveTab(defaultRoute);
+  };
+
+  const handleLogout = () => {
+    clearPreviousNavigationState();
+    storageService.setCurrentUser(null);
+    setCurrentUser(null);
+    setActiveTab('dashboard');
+  };
 
   // Check login state
   if (!currentUser) {
-    return <LoginView onLoginSuccess={user => setCurrentUser(user)} />;
+    return <LoginView onLoginSuccess={handleLoginSuccess} />;
   }
 
-  const handleLogout = () => {
-    storageService.setCurrentUser(null);
-    setCurrentUser(null);
-  };
-
   const handleNavigate = (tab: string, params?: any) => {
+    if (!canAccessTab(currentUser, tab)) {
+      setActiveTab(resolveDefaultRouteForCurrentUser(currentUser));
+      return;
+    }
     if (tab === 'reports' && params) {
       if (params.reportKey) setSelectedReportKey(params.reportKey);
       if (params.filters) setSelectedReportFilters(params.filters);
@@ -87,12 +110,21 @@ export default function App() {
   };
 
   const renderActiveView = () => {
-    // Role-based security guard
-    if (activeTab === 'payroll' && currentUser.role !== 'Admin') {
+    // Universal Role-Based Security Route Guard
+    if (!canAccessTab(currentUser, activeTab)) {
+      const fallbackTab = resolveDefaultRouteForCurrentUser(currentUser);
       return (
-        <div className="bg-rose-50 border border-rose-200 rounded-3xl p-8 text-center text-rose-800">
-          <h2 className="text-lg font-bold">غير مصرح بالدخول (403 Forbidden)</h2>
-          <p className="text-xs mt-2">عذراً، مسير الرواتب والمحرك المالي محمي ومقتصر فقط على حساب الإدارة العليا.</p>
+        <div className="bg-rose-50 border border-rose-200 rounded-3xl p-8 text-center text-rose-800 max-w-lg mx-auto my-12 shadow-sm">
+          <h2 className="text-base font-bold">غير مصرح بالدخول (403 Forbidden)</h2>
+          <p className="text-xs mt-2 text-rose-700 leading-relaxed">
+            عذراً، هذا القسم غير مصرح به لصلاحيات حسابك الحالي ({currentUser.role}). تم توجيهك تلقائياً للواجهة المخصصة لاختصاصك.
+          </p>
+          <button
+            onClick={() => setActiveTab(fallbackTab)}
+            className="mt-4 px-5 py-2.5 bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+          >
+            الانتقال إلى صفحة حسابك الافتراضية
+          </button>
         </div>
       );
     }

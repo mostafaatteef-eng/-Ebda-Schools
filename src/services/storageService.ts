@@ -1574,7 +1574,12 @@ class StorageService {
     }
   }
 
-  public saveScheduleItem(item: ScheduleItem): void {
+  public saveScheduleItem(item: ScheduleItem): { success: boolean; message?: string } {
+    const caller = this.getCurrentUser();
+    const isScheduleAdmin = !caller || caller.role === 'Admin' || caller.role === 'Supervisor';
+    if (!isScheduleAdmin) {
+      return { success: false, message: 'غير مصرح للمعلم بتعديل أو إضافة حصص في الجدول العام (مقتصر على الإدارة والمشرفين).' };
+    }
     const list = this.getSchedule();
     const idx = list.findIndex(s => s.id === item.id);
     if (idx >= 0) {
@@ -1586,13 +1591,20 @@ class StorageService {
     this.logAudit('UPDATE', 'SCHEDULE', `تعديل الجدول الدراسي: ${item.grade} ${item.classroom} - ${item.subject}`);
     this.notifyChange();
     this.pushPost('saveScheduleItem', item).catch(() => {});
+    return { success: true, message: 'تم حفظ الحصة في الجدول بنجاح' };
   }
 
-  public deleteScheduleItem(id: string): void {
+  public deleteScheduleItem(id: string): { success: boolean; message?: string } {
+    const caller = this.getCurrentUser();
+    const isScheduleAdmin = !caller || caller.role === 'Admin' || caller.role === 'Supervisor';
+    if (!isScheduleAdmin) {
+      return { success: false, message: 'غير مصرح للمعلم بحذف حصص من الجدول العام.' };
+    }
     const list = this.getSchedule().filter(s => s.id !== id);
     localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
     this.notifyChange();
     this.pushPost('deleteScheduleItem', { id }).catch(() => {});
+    return { success: true, message: 'تم حذف الحصة من الجدول' };
   }
 
   public getLessonContents(): LessonContent[] {
@@ -2258,19 +2270,70 @@ class StorageService {
     }
   }
 
-  public saveLeave(leave: LeaveRecord): { success: boolean; message?: string } {
+  public saveLeave(leave: LeaveRecord, callerUser?: User | null): { success: boolean; message?: string } {
     const list = this.getLeaves();
-    const idx = list.findIndex(l => l.id === leave.id);
+    const caller = callerUser || this.getCurrentUser();
+    const isLeaveAdmin = caller?.role === 'Admin' || caller?.role === 'TeacherAffairs' || caller?.role === 'HR';
+
+    // Strict Identity Ownership Enforce:
+    let preparedLeave = { ...leave };
+    if (caller && !isLeaveAdmin) {
+      // Non-admins can only submit for themselves and status must be 'معلقة'
+      const ownEmpId = caller.employeeId || caller.id;
+      const ownEmployee = this.getEmployees().find(e => e.id === ownEmpId || e.employeeNumber === ownEmpId);
+      preparedLeave.employeeId = ownEmpId;
+      preparedLeave.employeeName = ownEmployee?.name || caller.fullName;
+      preparedLeave.department = ownEmployee?.department || 'هيئة التدريس';
+      preparedLeave.status = 'معلقة';
+    }
+
+    const idx = list.findIndex(l => l.id === preparedLeave.id);
     if (idx >= 0) {
-      list[idx] = leave;
+      if (caller && !isLeaveAdmin && list[idx].employeeId !== (caller.employeeId || caller.id)) {
+        return { success: false, message: 'غير مصرح لك بتعديل إجازة موظف آخر.' };
+      }
+      list[idx] = preparedLeave;
     } else {
-      list.unshift({ ...leave, id: leave.id || `LEV-${Date.now()}`, createdAt: getCairoNowISO() });
+      preparedLeave = {
+        ...preparedLeave,
+        id: preparedLeave.id || `LEV-${Date.now()}`,
+        createdAt: getCairoNowISO(),
+      };
+      list.unshift(preparedLeave);
     }
     localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(list));
-    this.logAudit('CREATE', 'LEAVE', `طلب إجازة للموظف: ${leave.employeeName} (${leave.leaveType})`);
+    this.logAudit(
+      idx >= 0 ? 'UPDATE' : 'CREATE',
+      'LEAVE',
+      `طلب إجازة للموظف: ${preparedLeave.employeeName} (${preparedLeave.leaveType})`
+    );
     this.notifyChange();
-    this.pushPost('saveLeave', leave).catch(() => {});
+    this.pushPost('saveLeave', preparedLeave).catch(() => {});
     return { success: true, message: 'تم حفظ طلب الإجازة بنجاح' };
+  }
+
+  public submitMyLeaveRequest(
+    leave: Partial<LeaveRecord>,
+    currentUser?: User | null
+  ): { success: boolean; message?: string } {
+    const caller = currentUser || this.getCurrentUser();
+    if (!caller) return { success: false, message: 'يجب تسجيل الدخول لتقديم طلب إجازة.' };
+    const ownEmpId = caller.employeeId || caller.id;
+    const emp = this.getEmployees().find(e => e.id === ownEmpId || e.employeeNumber === ownEmpId);
+    const prepared: LeaveRecord = {
+      id: `LEV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      employeeId: ownEmpId,
+      employeeName: emp?.name || caller.fullName,
+      department: emp?.department || 'هيئة التدريس',
+      leaveType: leave.leaveType || 'سنوية',
+      startDate: leave.startDate || getCairoCurrentDate(),
+      endDate: leave.endDate || getCairoCurrentDate(),
+      daysCount: leave.daysCount || 1,
+      reason: leave.reason || '',
+      status: 'معلقة',
+      createdAt: getCairoNowISO(),
+    };
+    return this.saveLeave(prepared, caller);
   }
 
   public deleteLeave(id: string): { success: boolean; message?: string } {

@@ -61,6 +61,14 @@ export class ScheduleService {
     item: ScheduleItem,
     forceBypassWarnings = false
   ): { success: boolean; conflictResult?: ScheduleConflictResult; data?: ScheduleItem; message?: string } {
+    const caller = storageService.getCurrentUser();
+    if (caller && caller.role !== 'Admin' && caller.role !== 'Supervisor') {
+      return {
+        success: false,
+        message: 'غير مصرح للمعلم بتعديل أو إضافة حصص في الجدول العام (مقتصر على الإدارة والمشرفين).',
+      };
+    }
+
     const all = this.getSchedule();
     const conflictResult = ScheduleConflictService.validateScheduleItem(item, all);
 
@@ -82,13 +90,28 @@ export class ScheduleService {
       updatedAt: now,
     };
 
-    storageService.saveScheduleItem(prepared);
+    const res = storageService.saveScheduleItem(prepared);
+    if (!res.success) {
+      return { success: false, message: res.message };
+    }
+
     return {
       success: true,
       conflictResult,
       data: prepared,
       message: 'تم حفظ الحصة في الجدول بنجاح',
     };
+  }
+
+  public static deleteScheduleItem(id: string): { success: boolean; message?: string } {
+    const caller = storageService.getCurrentUser();
+    if (caller && caller.role !== 'Admin' && caller.role !== 'Supervisor') {
+      return {
+        success: false,
+        message: 'غير مصرح للمعلم بحذف حصص من الجدول العام.',
+      };
+    }
+    return storageService.deleteScheduleItem(id);
   }
 
   /**

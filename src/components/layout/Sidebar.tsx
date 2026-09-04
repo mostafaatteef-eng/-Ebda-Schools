@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { PermissionKey, User } from '../../types';
 import { hasPermission } from '../../utils/permissions';
+import { canAccessTab } from '../../utils/navigation';
 import { NTSSLogo } from '../common/NTSSLogo';
 
 export type ActiveTab =
@@ -112,156 +113,135 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'شؤون الطلاب والمدرسة',
+      title: 'شئون الطلاب والمدرسة',
       items: [
         {
           id: 'students',
-          label: 'سجلات وبيانات الطلاب',
+          label: 'سجلات وبيانات الطلاب والقيد',
           icon: GraduationCap,
           permission: 'students.view',
-          hideForRoles: ['TeacherAffairs', 'Parent'],
         },
         {
           id: 'student_attendance',
-          label: 'رصد حضور الطلاب',
+          label: 'رصد حضور وغياب الطلاب',
           icon: UserCheck,
           badge: 'يومي',
           permission: 'studentAttendance.view',
-          hideForRoles: ['TeacherAffairs', 'Parent'],
         },
         {
           id: 'behavior',
-          label: 'لائحة الانضباط والسلوك',
+          label: 'لائحة الانضباط والخدمة الاجتماعية',
           icon: Shield,
           permission: 'behavior.view',
-          hideForRoles: ['TeacherAffairs', 'Parent'],
         },
         {
           id: 'teacher_portal',
-          label: 'الجدول وبوابة المعلم',
+          label: 'بوابة المعلم واليوم الدراسي',
           icon: BookOpen,
-          permission: 'schedule.view',
-          hideForRoles: ['Parent'],
+          permission: 'teacherPortal.access',
         },
         {
           id: 'parent_day_view',
           label: 'اليوم الدراسي لابنك',
           icon: Sun,
-          badge: 'جديد',
-          showForRoles: ['Parent', 'Admin'],
+          badge: 'مباشر',
         },
         {
           id: 'parent_portal',
           label: 'بوابة ولي الأمر الشاملة',
           icon: HeartHandshake,
           permission: 'parentPortal.access',
-          showForRoles: ['Parent', 'Admin'],
         },
       ],
     },
     {
-      title: 'شؤون المعلمين والموظفين',
+      title: 'شئون المعلمين والعاملين',
       items: [
         {
           id: 'employees',
-          label: 'المعلمون والموظفون',
+          label: 'سجلات المعلمين والعاملين',
           icon: Users,
           permission: 'teachers.view',
-          hideForRoles: ['StudentAffairs', 'SocialSpecialist', 'Teacher', 'Parent'],
         },
         {
           id: 'daily_attendance',
-          label: 'دوام الموظفين اليومي',
+          label: 'دفتر دوام العاملين اليومي',
           icon: Clock,
           permission: 'teacherAttendance.view',
-          hideForRoles: ['StudentAffairs', 'SocialSpecialist', 'Teacher', 'Parent'],
         },
         {
           id: 'monthly_matrix',
-          label: 'المصفوفة الشهرية للدوام',
+          label: 'المصفوفة الشهرية لدوام العاملين',
           icon: CalendarDays,
           permission: 'teacherAttendance.view',
-          hideForRoles: ['StudentAffairs', 'SocialSpecialist', 'Teacher', 'Parent'],
         },
         {
           id: 'leaves',
-          label: 'الإجازات والأذونات',
+          label: 'إدارة الإجازات والأذونات الرسمية',
           icon: CalendarRange,
           permission: 'leaves.view',
-          hideForRoles: ['StudentAffairs', 'Parent'],
         },
         {
           id: 'payroll',
           label: 'محرك ومسير الرواتب',
           icon: Banknote,
           badge: 'إدارة فقط',
-          adminOnly: true, // STRICT ADMIN ONLY
-          hideForRoles: ['TeacherAffairs', 'StudentAffairs', 'Teacher', 'SocialSpecialist', 'Parent', 'HR', 'Supervisor'],
+          adminOnly: true,
         },
       ],
     },
     {
-      title: 'النظام والتقارير والرقابة',
+      title: 'التقارير والنظام والرقابة',
       items: [
         {
           id: 'reports',
           label: 'مركز التقارير والإحصائيات',
           icon: FileText,
           permission: 'reports.view',
-          hideForRoles: ['Parent'],
         },
         {
           id: 'import_center',
           label: 'مركز الاستيراد والتحديث الذكي',
           icon: UploadCloud,
           adminOnly: true,
-          badge: 'Import',
-          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
+          badge: 'استيراد',
         },
         {
           id: 'system_health',
-          label: 'صحة النظام والأداء',
+          label: 'صحة النظام وفحص الأداء',
           icon: Activity,
           adminOnly: true,
-          badge: 'Diagnostics',
-          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
         },
         {
           id: 'master_data',
-          label: 'إدارة القوائم والتعريفات',
+          label: 'إدارة القوائم والتعريفات الوزارية',
           icon: Database,
           adminOnly: true,
-          badge: 'Master Data',
-          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
         },
         {
           id: 'backup',
-          label: 'النسخ الاحتياطي والاستعادة',
+          label: 'النسخ الاحتياطي والأرشفة',
           icon: ShieldCheck,
           adminOnly: true,
-          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
         },
         {
           id: 'operations',
-          label: 'مركز التشغيل والجاهزية (Go-Live)',
+          label: 'مركز التشغيل والجاهزية الفنية',
           icon: Server,
           adminOnly: true,
-          badge: 'RC1',
-          hideForRoles: ['Teacher', 'Parent', 'SocialSpecialist', 'StudentAffairs', 'TeacherAffairs'],
         },
         {
           id: 'users',
-          label: 'المستخدمون والصلاحيات',
+          label: 'إدارة المستخدمين والصلاحيات',
           icon: ShieldCheck,
           adminOnly: true,
           permission: 'users.manage',
         },
         {
           id: 'audit',
-          label: 'سجل العمليات والرقابة',
+          label: 'سجل العمليات والرقابة الأمنية',
           icon: History,
           permission: 'audit.view',
-          hideForRoles: ['Teacher', 'Parent'],
         },
         {
           id: 'settings',
@@ -305,9 +285,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
           {navSections.map(section => {
             const visibleItems = section.items.filter(item => {
+              // 1. Strict route guard (enforces role boundaries: Parent, Teacher, StudentAffairs, etc.)
+              if (!canAccessTab(currentUser, item.id)) return false;
+              // 2. Admin-only check
               if (item.adminOnly && userRole !== 'Admin') return false;
-              if (item.hideForRoles && item.hideForRoles.includes(userRole)) return false;
-              if (item.showForRoles && !item.showForRoles.includes(userRole)) return false;
+              // 3. Permission check
               if (item.permission && !hasPermission(currentUser, item.permission)) return false;
               return true;
             });

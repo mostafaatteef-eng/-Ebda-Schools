@@ -195,7 +195,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
-    'audit.view': true,
+    'audit.view': false,
     'reports.view': true,
   },
   TeacherAffairs: {
@@ -282,7 +282,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
-    'audit.view': true,
+    'audit.view': false,
     'reports.view': true,
   },
   Teacher: {
@@ -456,7 +456,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
-    'audit.view': true,
+    'audit.view': false,
     'reports.view': true,
   },
   Parent: {
@@ -638,7 +638,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
-    'audit.view': true,
+    'audit.view': false,
     'reports.view': true,
   },
   Supervisor: {

@@ -103,6 +103,23 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({ currentUser 
     window.print();
   };
 
+  if (linkedStudents.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto mt-12 p-8 bg-white border border-slate-200 rounded-3xl text-center shadow-xs">
+        <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-amber-100">
+          <HeartHandshake className="w-8 h-8" />
+        </div>
+        <h2 className="text-lg font-black text-slate-900 mb-2">بوابة ولي الأمر</h2>
+        <p className="text-sm font-bold text-slate-700 mb-2">
+          لا يوجد طالب مرتبط بهذا الحساب حالياً.
+        </p>
+        <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto">
+          يرجى مراجعة إدارة شئون الطلاب بالمدرسة لربط الرقم القومي أو الهاتف بحساب الطالب وتفعيل بيانات المتابعة.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-16 animate-in fade-in duration-200" id="parent-portal-main">
       {/* Top Header Card */}

@@ -128,7 +128,10 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
   }, [permissions, statusFilter, typeFilter, searchQuery]);
 
   const handleOpenLeaveModal = () => {
-    setLeaveEmpId(employees[0]?.id || '');
+    const defaultEmp = canApprove
+      ? employees[0]?.id || ''
+      : currentUser?.employeeId || currentUser?.id || employees[0]?.id || '';
+    setLeaveEmpId(defaultEmp);
     setLeaveType('سنوية');
     setStartDate(new Date().toISOString().split('T')[0]);
     setEndDate(new Date().toISOString().split('T')[0]);
@@ -138,7 +141,10 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
   };
 
   const handleOpenPermModal = () => {
-    setPermEmpId(employees[0]?.id || '');
+    const defaultEmp = canApprove
+      ? employees[0]?.id || ''
+      : currentUser?.employeeId || currentUser?.id || employees[0]?.id || '';
+    setPermEmpId(defaultEmp);
     setPermDate(new Date().toISOString().split('T')[0]);
     setPermType('إذن خروج مؤقت');
     setPermStartTime('10:00');
@@ -593,20 +599,32 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
               )}
 
               <div className="space-y-4 text-xs">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">اختر الموظف / المعلم *</label>
-                  <select
-                    value={leaveEmpId}
-                    onChange={e => setLeaveEmpId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
-                  >
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.name} ({emp.id} - {emp.department})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {canApprove ? (
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">اختر الموظف / المعلم *</label>
+                    <select
+                      value={leaveEmpId}
+                      onChange={e => setLeaveEmpId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
+                    >
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.name} ({emp.id} - {emp.department})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <label className="font-bold text-slate-500 block text-[11px] mb-1">مقدم الطلب (صاحب الحساب الحالي)</label>
+                    <div className="font-bold text-slate-800 text-sm">
+                      {currentUser?.fullName || employees.find(e => e.id === leaveEmpId)?.name || 'المعلم الحالي'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      الكود الوظيفي: {leaveEmpId || currentUser?.employeeId || currentUser?.id} • القسم: {employees.find(e => e.id === leaveEmpId)?.department || 'هيئة التدريس'}
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">نوع الإجازة *</label>
@@ -705,20 +723,32 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
               )}
 
               <div className="space-y-4 text-xs">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">اختر الموظف / المعلم *</label>
-                  <select
-                    value={permEmpId}
-                    onChange={e => setPermEmpId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
-                  >
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.name} ({emp.id} - {emp.department})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {canApprove ? (
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">اختر الموظف / المعلم *</label>
+                    <select
+                      value={permEmpId}
+                      onChange={e => setPermEmpId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
+                    >
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.name} ({emp.id} - {emp.department})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <label className="font-bold text-slate-500 block text-[11px] mb-1">مقدم طلب التصريح / الإذن</label>
+                    <div className="font-bold text-slate-800 text-sm">
+                      {currentUser?.fullName || employees.find(e => e.id === permEmpId)?.name || 'المعلم الحالي'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      الكود الوظيفي: {permEmpId || currentUser?.employeeId || currentUser?.id} • القسم: {employees.find(e => e.id === permEmpId)?.department || 'هيئة التدريس'}
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
