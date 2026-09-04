@@ -17,6 +17,8 @@ import {
 import { User } from '../types';
 import { storageService } from './storageService';
 import { ParentService } from './parentService';
+import { ExportService } from './exportService';
+import { BackupRestoreService } from './backupRestoreService';
 import { getCairoNowISO } from '../utils/egyptianTime';
 
 const STORAGE_KEYS = {
@@ -143,7 +145,133 @@ export class OperationsService {
         : `يوجد ${defaultPasswordUsers.length} حسابات بكلمات مرور ضعيفة!`,
     });
 
-    // 4. Production Master Data Validation
+    // 4. Excel Formula Injection Protection (CSV / Excel Injection Guard)
+    const maliciousFormulas = ['=SUM(A1:A10)', '+cmd|/c calc!A0', '-2+3+cmd|', '@HYPERLINK("http://evil.com")'];
+    const sanitizedResults = maliciousFormulas.map(f => ExportService.sanitizeExcelValue(f));
+    const isFormulaProtected = sanitizedResults.every(r => typeof r === 'string' && r.startsWith("'"));
+    checks.push({
+      name: 'الحماية من حقن معادلات الإكسل (Formula Injection Protection)',
+      target: 'ExportService.sanitizeExcelValue',
+      status: isFormulaProtected ? 'PASS' : 'FAIL',
+      message: isFormulaProtected
+        ? 'تم تحييد كافة الرموز الخطرة (=, +, -, @) ببادئة اقتباس مفردة بنجاح'
+        : 'تم رصد ثغرة في تصدير الجداول!',
+    });
+
+    // 5. Attendance Day-Lock Resistance (Modifications on locked days blocked)
+    const lockTestDate = '2099-12-31';
+    const allDays = storageService.getAttendanceDays();
+    if (!allDays.some(d => d.date === lockTestDate)) {
+      storageService.saveAttendanceDay({
+        id: `DAY-${lockTestDate}`,
+        date: lockTestDate,
+        academicYearId: 'AY-TEST',
+        termId: 'T1',
+        dayName: 'الخميس',
+        status: 'Locked',
+        totalStudentsCount: 10,
+        recordedCount: 10,
+        presentCount: 10,
+        lateCount: 0,
+        absentCount: 0,
+        unrecordedCount: 0,
+        lockedAt: '2099-12-31T15:00:00Z',
+        lockedBy: 'RedTeamTester',
+      });
+    }
+    const tamperBatchResult = storageService.saveStudentSchoolAttendanceBatch([
+      {
+        id: 'ATT-TAMPER-TEST',
+        studentId: 'STD-001',
+        date: lockTestDate,
+        status: 'حاضر',
+      } as any,
+    ]);
+    const isDayLockResistant = !tamperBatchResult.success && tamperBatchResult.dayLocked === true;
+    checks.push({
+      name: 'صلابة إقفال أيام الحضور ومنع التعديل الرجعي (Day Lock Tamper Guard)',
+      target: 'AttendanceDayLock Guard',
+      status: isDayLockResistant ? 'PASS' : 'FAIL',
+      message: isDayLockResistant
+        ? 'تم رفض التعديل على اليوم المقفل نهائياً (dayLocked: true)'
+        : 'فشل حظر التعديل على يوم مقفل!',
+    });
+
+    // 6. Behavior Score Idempotency & Limits (Transaction deduplication and 0-100 clamping)
+    const testTxId = `TX-REDTEAM-${Date.now()}`;
+    const tx1 = storageService.addBehaviorScoreTransaction({
+      id: testTxId,
+      studentId: 'STD-TEST-001',
+      studentName: 'طالب الاختبار',
+      date: '2026-01-01',
+      type: 'NEGATIVE',
+      sourceType: 'violation',
+      points: 15,
+      balanceAfter: 85,
+      reason: 'اختبار الأمان والمكررات',
+      createdBy: 'RedTeam',
+      createdAt: '2026-01-01T00:00:00Z',
+    });
+    const tx2 = storageService.addBehaviorScoreTransaction({
+      id: testTxId,
+      studentId: 'STD-TEST-001',
+      studentName: 'طالب الاختبار',
+      date: '2026-01-01',
+      type: 'NEGATIVE',
+      sourceType: 'violation',
+      points: 15,
+      balanceAfter: 85,
+      reason: 'اختبار تكرار المعاملة (Double-Spend Attack)',
+      createdBy: 'RedTeam',
+      createdAt: '2026-01-01T00:00:00Z',
+    });
+    const isIdempotencyProtected = tx2.success && tx2.newScore === tx1.newScore;
+    checks.push({
+      name: 'منع التكرار وسحب النقاط المزدوج للسلوك (Idempotency & Double-Spend)',
+      target: 'BehaviorScoreLedger Engine',
+      status: isIdempotencyProtected ? 'PASS' : 'FAIL',
+      message: isIdempotencyProtected
+        ? 'تم رصد وتفادي تكرار المعاملة بنجاح دون خصم النقاط مرتين'
+        : 'فشل منع تكرار المعاملة السلوكية!',
+    });
+
+    // 7. Minimum Admin Account Guard (Anti-Lockout)
+    const activeAdmins = storageService.getUsers().filter(u => u.role === 'Admin' && u.status === 'Active');
+    const hasActiveAdminSafe = activeAdmins.length >= 1;
+    let isAntiLockoutProtected = true;
+    if (activeAdmins.length === 1) {
+      const deleteAttempt = storageService.deleteUser(activeAdmins[0].id);
+      isAntiLockoutProtected = !deleteAttempt.success;
+    }
+    checks.push({
+      name: 'حماية حساب مدير النظام الأخير ضد الحذف أو الإغلاق (Anti-Lockout)',
+      target: 'User RBAC & Admin Protection',
+      status: hasActiveAdminSafe && isAntiLockoutProtected ? 'PASS' : 'FAIL',
+      message: hasActiveAdminSafe && isAntiLockoutProtected
+        ? `الحسابات الإدارية مؤمنة (${activeAdmins.length} مدير نشط) ومحمية ضد الحذف العرضي`
+        : 'خطر إقفال النظام بغياب مدير نشط!',
+    });
+
+    // 8. Disaster Recovery Backup & Snapshot Integrity
+    let isBackupValid = false;
+    try {
+      const adminUser = activeAdmins[0] || { id: 'ADM-TEST', role: 'Admin', fullName: 'مدير النظام' };
+      const backupResult = BackupRestoreService.createBackup('CONFIG', 'فحص أمان الاستعادة', adminUser as any);
+      const validation = BackupRestoreService.validateBackupForRestore(backupResult.backupPackage);
+      isBackupValid = validation.isValid && backupResult.backupPackage.metadata.schemaVersion === BackupRestoreService.SCHEMA_VERSION;
+    } catch {
+      isBackupValid = false;
+    }
+    checks.push({
+      name: 'سلامة حزمة الاستعادة السحابية والنسخ الاحتياطي (Disaster Recovery)',
+      target: 'BackupRestoreService.validateBackupForRestore',
+      status: isBackupValid ? 'PASS' : 'FAIL',
+      message: isBackupValid
+        ? `حزمة النسخ الاحتياطي متوافقة ومطابقة للمخطط ${BackupRestoreService.SCHEMA_VERSION}`
+        : 'فشل التحقق من بنية النسخ الاحتياطي!',
+    });
+
+    // 9. Production Master Data Validation
     const settings = storageService.getSettings();
     const hasActiveYear = !!settings.currentAcademicYear;
     const hasActiveTerm = !!settings.currentTerm;

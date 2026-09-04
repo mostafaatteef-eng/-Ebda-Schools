@@ -231,6 +231,7 @@ function doPost(e) {
     var isPayrollAction = (
       action === 'getPayroll' || 
       action === 'savePayroll' || 
+      action === 'bulkSavePayroll' || 
       action === 'approvePayroll' || 
       action === 'lockPayroll' || 
       action === 'generatePayroll'
@@ -245,7 +246,7 @@ function doPost(e) {
     // 3. CONCURRENCY: Acquire Lock for batch writes & sensitive mutations
     var writeActions = [
       'syncAll', 'bulkSaveAttendance', 'bulkSaveStudents', 'batchSaveStudentEnrollments',
-      'savePayroll', 'approvePayroll', 'lockPayroll', 'saveStudentTransfer'
+      'savePayroll', 'bulkSavePayroll', 'approvePayroll', 'lockPayroll', 'saveStudentTransfer'
     ];
     if (writeActions.indexOf(action) !== -1) {
       try {
@@ -256,32 +257,50 @@ function doPost(e) {
     }
 
     if (action === 'syncAll' && payload) {
-      if (payload.employees && Array.isArray(payload.employees)) setSheetData(ss, SHEETS.EMPLOYEES, payload.employees);
-      if (payload.attendance && Array.isArray(payload.attendance)) setSheetData(ss, SHEETS.ATTENDANCE, payload.attendance);
-      if (payload.leaves && Array.isArray(payload.leaves)) setSheetData(ss, SHEETS.LEAVES, payload.leaves);
-      if (payload.users && Array.isArray(payload.users)) setSheetData(ss, SHEETS.USERS, payload.users);
-      if (payload.permissions && Array.isArray(payload.permissions)) setSheetData(ss, SHEETS.PERMISSIONS, payload.permissions);
+      if (callerRole !== 'Admin') {
+        output.status = 'error';
+        output.errorCode = 'FORBIDDEN_SYNC_ALL';
+        output.message = 'مزامنة الاستبدال الشامل (syncAll) مقصورة على مديري النظام فقط.';
+        return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      // Safe Sheet setter that guards against accidental empty wipeout
+      var safeSetSheetData = function(sheetName, items) {
+        if (Array.isArray(items)) {
+          if (items.length === 0 && !payload.allowEmptyWipe) {
+            console.warn('Skipping empty array for sheet ' + sheetName + ' to prevent accidental wipeout.');
+            return;
+          }
+          setSheetData(ss, sheetName, items);
+        }
+      };
+
+      if (payload.employees) safeSetSheetData(SHEETS.EMPLOYEES, payload.employees);
+      if (payload.attendance) safeSetSheetData(SHEETS.ATTENDANCE, payload.attendance);
+      if (payload.leaves) safeSetSheetData(SHEETS.LEAVES, payload.leaves);
+      if (payload.users) safeSetSheetData(SHEETS.USERS, payload.users);
+      if (payload.permissions) safeSetSheetData(SHEETS.PERMISSIONS, payload.permissions);
       if (payload.settings) saveSettingsData(ss, payload.settings);
-      if (payload.auditLogs && Array.isArray(payload.auditLogs)) setSheetData(ss, SHEETS.AUDIT_LOGS, payload.auditLogs);
-      if (payload.students && Array.isArray(payload.students)) setSheetData(ss, SHEETS.STUDENTS, payload.students);
-      if (payload.studentAttendance && Array.isArray(payload.studentAttendance)) setSheetData(ss, SHEETS.STUDENT_ATTENDANCE, payload.studentAttendance);
-      if (payload.classAttendance && Array.isArray(payload.classAttendance)) setSheetData(ss, SHEETS.CLASS_ATTENDANCE, payload.classAttendance);
-      if (payload.behaviorTypes && Array.isArray(payload.behaviorTypes)) setSheetData(ss, SHEETS.BEHAVIOR_TYPES, payload.behaviorTypes);
-      if (payload.positiveBehaviorTypes && Array.isArray(payload.positiveBehaviorTypes)) setSheetData(ss, SHEETS.POSITIVE_BEHAVIOR_TYPES, payload.positiveBehaviorTypes);
-      if (payload.behaviorViolations && Array.isArray(payload.behaviorViolations)) setSheetData(ss, SHEETS.BEHAVIOR_VIOLATIONS, payload.behaviorViolations);
-      if (payload.behaviorLedger && Array.isArray(payload.behaviorLedger)) setSheetData(ss, SHEETS.BEHAVIOR_LEDGER, payload.behaviorLedger);
-      if (payload.behaviorCases && Array.isArray(payload.behaviorCases)) setSheetData(ss, SHEETS.BEHAVIOR_CASES, payload.behaviorCases);
-      if (payload.schedule && Array.isArray(payload.schedule)) setSheetData(ss, SHEETS.SCHEDULE, payload.schedule);
-      if (payload.scheduleSubstitutions && Array.isArray(payload.scheduleSubstitutions)) setSheetData(ss, SHEETS.SCHEDULE_SUBSTITUTIONS, payload.scheduleSubstitutions);
-      if (payload.lessonInstances && Array.isArray(payload.lessonInstances)) setSheetData(ss, SHEETS.LESSON_INSTANCES, payload.lessonInstances);
-      if (payload.lessonContent && Array.isArray(payload.lessonContent)) setSheetData(ss, SHEETS.LESSON_CONTENT, payload.lessonContent);
-      if (payload.payroll && Array.isArray(payload.payroll) && callerRole === 'Admin') setSheetData(ss, SHEETS.PAYROLL, payload.payroll);
-      if (payload.academicYears && Array.isArray(payload.academicYears)) setSheetData(ss, SHEETS.ACADEMIC_YEARS, payload.academicYears);
-      if (payload.studentEnrollments && Array.isArray(payload.studentEnrollments)) setSheetData(ss, SHEETS.STUDENT_ENROLLMENTS, payload.studentEnrollments);
-      if (payload.studentTransfers && Array.isArray(payload.studentTransfers)) setSheetData(ss, SHEETS.STUDENT_TRANSFERS, payload.studentTransfers);
-      if (payload.promotionRules && Array.isArray(payload.promotionRules)) setSheetData(ss, SHEETS.PROMOTION_RULES, payload.promotionRules);
-      if (payload.parentCommunications && Array.isArray(payload.parentCommunications)) setSheetData(ss, SHEETS.PARENT_COMMUNICATIONS, payload.parentCommunications);
-      if (payload.locations && Array.isArray(payload.locations)) setSheetData(ss, SHEETS.LOCATIONS, payload.locations);
+      if (payload.auditLogs) safeSetSheetData(SHEETS.AUDIT_LOGS, payload.auditLogs);
+      if (payload.students) safeSetSheetData(SHEETS.STUDENTS, payload.students);
+      if (payload.studentAttendance) safeSetSheetData(SHEETS.STUDENT_ATTENDANCE, payload.studentAttendance);
+      if (payload.classAttendance) safeSetSheetData(SHEETS.CLASS_ATTENDANCE, payload.classAttendance);
+      if (payload.behaviorTypes) safeSetSheetData(SHEETS.BEHAVIOR_TYPES, payload.behaviorTypes);
+      if (payload.positiveBehaviorTypes) safeSetSheetData(SHEETS.POSITIVE_BEHAVIOR_TYPES, payload.positiveBehaviorTypes);
+      if (payload.behaviorViolations) safeSetSheetData(SHEETS.BEHAVIOR_VIOLATIONS, payload.behaviorViolations);
+      if (payload.behaviorLedger) safeSetSheetData(SHEETS.BEHAVIOR_LEDGER, payload.behaviorLedger);
+      if (payload.behaviorCases) safeSetSheetData(SHEETS.BEHAVIOR_CASES, payload.behaviorCases);
+      if (payload.schedule) safeSetSheetData(SHEETS.SCHEDULE, payload.schedule);
+      if (payload.scheduleSubstitutions) safeSetSheetData(SHEETS.SCHEDULE_SUBSTITUTIONS, payload.scheduleSubstitutions);
+      if (payload.lessonInstances) safeSetSheetData(SHEETS.LESSON_INSTANCES, payload.lessonInstances);
+      if (payload.lessonContent) safeSetSheetData(SHEETS.LESSON_CONTENT, payload.lessonContent);
+      if (payload.payroll && callerRole === 'Admin') safeSetSheetData(SHEETS.PAYROLL, payload.payroll);
+      if (payload.academicYears) safeSetSheetData(SHEETS.ACADEMIC_YEARS, payload.academicYears);
+      if (payload.studentEnrollments) safeSetSheetData(SHEETS.STUDENT_ENROLLMENTS, payload.studentEnrollments);
+      if (payload.studentTransfers) safeSetSheetData(SHEETS.STUDENT_TRANSFERS, payload.studentTransfers);
+      if (payload.promotionRules) safeSetSheetData(SHEETS.PROMOTION_RULES, payload.promotionRules);
+      if (payload.parentCommunications) safeSetSheetData(SHEETS.PARENT_COMMUNICATIONS, payload.parentCommunications);
+      if (payload.locations) safeSetSheetData(SHEETS.LOCATIONS, payload.locations);
       output.message = 'Full synchronization completed successfully!';
     } else if (action === 'saveAttendance' && payload) {
       upsertAttendanceRecord(ss, payload);
@@ -401,13 +420,13 @@ function doPost(e) {
     } else if (action === 'addAuditLog' && payload) {
       appendRecord(ss, SHEETS.AUDIT_LOGS, payload);
       output.message = 'Audit log recorded!';
-    } else if (action === 'savePayroll' && payload && callerRole === 'Admin') {
+    } else if ((action === 'savePayroll' || action === 'bulkSavePayroll') && payload && callerRole === 'Admin') {
       if (Array.isArray(payload)) {
         payload.forEach(function(rec) { upsertRecord(ss, SHEETS.PAYROLL, 'id', rec); });
       } else {
         upsertRecord(ss, SHEETS.PAYROLL, 'id', payload);
       }
-      output.message = 'Payroll record saved successfully!';
+      output.message = 'Payroll record(s) saved successfully!';
     } else {
       output.status = 'error';
       output.errorCode = 'UNKNOWN_ACTION';

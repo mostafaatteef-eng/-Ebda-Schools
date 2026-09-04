@@ -1392,6 +1392,11 @@ class StorageService {
   }
 
   public saveClassAttendanceRecord(rec: ClassAttendanceRecord): { success: boolean; message?: string } {
+    const day = this.getAttendanceDayByDate(rec.date);
+    if (day && day.status === 'Locked') {
+      return { success: false, message: 'اليوم الدراسي مقفل نهائياً. لا يمكن تعديل حضور الحصص ليوم مقفل.' };
+    }
+
     const list = this.getClassAttendance();
     const idx = list.findIndex(
       r => r.studentId === rec.studentId && r.date === rec.date && r.periodNumber === rec.periodNumber
@@ -1426,6 +1431,17 @@ class StorageService {
     message?: string;
   } {
     if (records.length === 0) return { success: true, count: 0, exceptionsGenerated: 0 };
+
+    const firstDate = records[0].date;
+    const day = this.getAttendanceDayByDate(firstDate);
+    if (day && day.status === 'Locked') {
+      return {
+        success: false,
+        count: 0,
+        exceptionsGenerated: 0,
+        message: 'اليوم الدراسي مقفل نهائياً. لا يمكن تعديل أو رصد حضور الحصص ليوم مقفل.',
+      };
+    }
 
     const list = this.getClassAttendance();
     const map = new Map<string, number>();
@@ -1669,6 +1685,11 @@ class StorageService {
 
   // ---------------- Payroll Engine ----------------
   public getPayrollRecords(): PayrollRecord[] {
+    const user = this.getCurrentUser();
+    if (user && user.role !== 'Admin') {
+      this.logAudit('SECURITY_VIOLATION', 'PAYROLL', `محاولة وصول غير مصرح بها لمسير الرواتب من: ${user.fullName} (${user.role})`);
+      return [];
+    }
     const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL);
     if (!raw) return [];
     try {
@@ -1678,7 +1699,13 @@ class StorageService {
     }
   }
 
-  public savePayrollRecord(record: PayrollRecord): void {
+  public savePayrollRecord(record: PayrollRecord): { success: boolean; message?: string } {
+    const user = this.getCurrentUser();
+    if (user && user.role !== 'Admin') {
+      this.logAudit('SECURITY_VIOLATION', 'PAYROLL', `محاولة تعديل مسير الرواتب غير مصرح بها من: ${user.fullName}`);
+      return { success: false, message: 'غير مصرح بتعديل سجلات الرواتب. الصلاحية مقصورة على مدير النظام.' };
+    }
+
     const list = this.getPayrollRecords();
     const idx = list.findIndex(r => r.id === record.id || (r.employeeId === record.employeeId && r.month === record.month && r.year === record.year));
     const now = getCairoNowISO();
@@ -1699,13 +1726,20 @@ class StorageService {
     this.logAudit('UPDATE', 'PAYROLL', `تحديث مسير مرتب: ${prepared.employeeName} (${prepared.month}/${prepared.year})`);
     this.notifyChange();
     this.pushPost('savePayroll', prepared).catch(() => {});
+    return { success: true, message: 'تم حفظ سجل الراتب بنجاح' };
   }
 
-  public savePayrollRecordsBatch(records: PayrollRecord[]): void {
+  public savePayrollRecordsBatch(records: PayrollRecord[]): { success: boolean; message?: string } {
+    const user = this.getCurrentUser();
+    if (user && user.role !== 'Admin') {
+      this.logAudit('SECURITY_VIOLATION', 'PAYROLL', `محاولة تعديل دفعة رواتب غير مصرح بها من: ${user.fullName}`);
+      return { success: false, message: 'غير مصرح بتعديل مسير الرواتب.' };
+    }
     localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(records));
     this.logAudit('UPDATE', 'PAYROLL', `تحديث دفعة مسير الرواتب (${records.length} سجل)`);
     this.notifyChange();
     this.pushPost('bulkSavePayroll', records).catch(() => {});
+    return { success: true, message: 'تم حفظ دفعة الرواتب بنجاح' };
   }
 
   public generateMonthlyPayroll(month: number, year: number): PayrollRecord[] {
@@ -1786,19 +1820,44 @@ class StorageService {
   }
 
   // ---------------- Employees & Teachers ----------------
-  public getEmployees(): Employee[] {
+  public getEmployees(options?: { includeFinancials?: boolean }): Employee[] {
     const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
     if (!raw) return [];
     try {
-      return JSON.parse(raw);
+      const list: Employee[] = JSON.parse(raw);
+      const user = this.getCurrentUser();
+      const isAdmin = !user || user.role === 'Admin';
+      if (!isAdmin && !options?.includeFinancials) {
+        // Red-Team Guard: Sanitize sensitive payroll compensation for non-admin callers
+        return list.map(e => ({
+          ...e,
+          basicSalary: 0,
+          allowances: 0,
+        }));
+      }
+      return list;
     } catch {
       return [];
     }
   }
 
   public saveEmployee(emp: Employee): { success: boolean; message?: string } {
-    const list = this.getEmployees();
+    const list = this.getEmployees({ includeFinancials: true });
+    const user = this.getCurrentUser();
+    const isAdmin = !user || user.role === 'Admin';
     const idx = list.findIndex(e => e.id === emp.id);
+
+    // Guard against non-admin altering salaries
+    if (!isAdmin) {
+      if (idx >= 0) {
+        emp.basicSalary = list[idx].basicSalary;
+        emp.allowances = list[idx].allowances;
+      } else {
+        emp.basicSalary = 0;
+        emp.allowances = 0;
+      }
+    }
+
     if (idx >= 0) {
       const old = list[idx];
       list[idx] = emp;
@@ -2104,10 +2163,39 @@ class StorageService {
   }
 
   public saveUser(user: User): { success: boolean; message?: string } {
+    const caller = this.getCurrentUser();
+    const isCallerAdmin = !caller || caller.role === 'Admin';
     const list = this.getUsers();
     const idx = list.findIndex(u => u.id === user.id || u.username.toLowerCase() === user.username.toLowerCase());
+
+    // Non-admins cannot create users or escalate roles
+    if (caller && !isCallerAdmin) {
+      if (idx < 0 || list[idx].id !== caller.id) {
+        return { success: false, message: 'غير مصرح بإنشاء أو تعديل حسابات مستخدمين آخرين.' };
+      }
+      if (user.role && user.role !== caller.role) {
+        return { success: false, message: 'غير مصرح بترقية الصلاحيات أو تغيير الدور الوظيفي.' };
+      }
+      user.role = caller.role;
+    }
+
     if (idx >= 0) {
       const existing = list[idx];
+
+      // Anti-Lockout Guard: Do not allow demoting or deactivating the last active Admin
+      if (existing.role === 'Admin' && user.role !== 'Admin') {
+        const otherAdmins = list.filter(u => u.role === 'Admin' && u.status === 'Active' && u.id !== existing.id);
+        if (otherAdmins.length === 0) {
+          return { success: false, message: 'لا يمكن خفض رتبة آخر مدير نشط في النظام لتفادي قفل المنظومة.' };
+        }
+      }
+      if (existing.role === 'Admin' && user.status === 'Inactive') {
+        const otherAdmins = list.filter(u => u.role === 'Admin' && u.status === 'Active' && u.id !== existing.id);
+        if (otherAdmins.length === 0) {
+          return { success: false, message: 'لا يمكن تعطيل آخر مدير نشط في النظام لتفادي قفل المنظومة.' };
+        }
+      }
+
       const passwordToSave = (user.password && user.password.trim().length > 0)
         ? user.password.trim()
         : existing.password;
@@ -2119,6 +2207,9 @@ class StorageService {
       };
       this.logAudit('UPDATE', 'USER', `تعديل بيانات المستخدم: ${user.fullName} (@${user.username})`);
     } else {
+      if (caller && !isCallerAdmin) {
+        return { success: false, message: 'غير مصرح بإضافة مستخدم جديد.' };
+      }
       const newUser: User = {
         ...user,
         id: user.id || `USR-${Date.now().toString().slice(-4)}`,
@@ -2136,8 +2227,20 @@ class StorageService {
   }
 
   public deleteUser(id: string): { success: boolean; message?: string } {
-    const list = this.getUsers().filter(u => u.id !== id);
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(list));
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin') {
+      return { success: false, message: 'غير مصرح بحذف المستخدمين. خاص بمدير النظام فقط.' };
+    }
+    const list = this.getUsers();
+    const toDelete = list.find(u => u.id === id);
+    if (toDelete?.role === 'Admin') {
+      const remainingAdmins = list.filter(u => u.role === 'Admin' && u.status === 'Active' && u.id !== id);
+      if (remainingAdmins.length === 0) {
+        return { success: false, message: 'لا يمكن حذف آخر مدير نشط في النظام للحفاظ على أمان المنظومة.' };
+      }
+    }
+    const filtered = list.filter(u => u.id !== id);
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(filtered));
     this.logAudit('DELETE', 'USER', `حذف مستخدم النظام: ${id}`);
     this.notifyChange();
     this.pushPost('deleteUser', { id }).catch(() => {});
@@ -2769,8 +2872,19 @@ class StorageService {
     }
   }
 
-  public addBehaviorScoreTransaction(transaction: BehaviorScoreLedger): { success: boolean; newScore: number } {
+  public addBehaviorScoreTransaction(transaction: BehaviorScoreLedger): { success: boolean; newScore: number; message?: string } {
     const list = this.getBehaviorLedger();
+
+    // Idempotency & Double-Spend Guard: If this transaction ID is already recorded, reject duplicate
+    if (transaction.id && list.some(l => l.id === transaction.id)) {
+      const existing = list.find(l => l.id === transaction.id)!;
+      return {
+        success: true,
+        newScore: existing.balanceAfter !== undefined ? existing.balanceAfter : 100,
+        message: 'تم تفادي تكرار تسجيل المعاملة السلوكية مسبقاً (Idempotent)',
+      };
+    }
+
     const now = getCairoNowISO();
     const user = this.getCurrentUser();
 
@@ -2799,7 +2913,7 @@ class StorageService {
 
     this.notifyChange();
     this.pushPost('addBehaviorLedger', prepared).catch(() => {});
-    return { success: true, newScore };
+    return { success: true, newScore, message: 'تم تسجيل المعاملة بنجاح' };
   }
 
   // ---------------- Behavior Cases & Followups ----------------

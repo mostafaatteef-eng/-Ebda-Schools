@@ -214,6 +214,7 @@ export class BackupRestoreService {
     // 1. Mandatory Auto-Safety Backup before destructive restore
     const safety = this.createBackup('FULL', 'نسخة أمان تلقائية قبل استعادة البيانات', currentUser);
     const safetyBackupId = safety.backupPackage.metadata.id;
+    this.saveBackupHistory(safety.backupPackage.metadata);
 
     // 2. Restore entities safely
     let restoredCount = 0;
@@ -240,6 +241,13 @@ export class BackupRestoreService {
     restoreEntity('leaves', STORAGE_KEYS.LEAVES);
     restoreEntity('payroll', STORAGE_KEYS.PAYROLL);
     restoreEntity('payrollSnapshots', STORAGE_KEYS.PAYROLL_SNAPSHOTS);
+
+    // Lockout Protection: Ensure at least one active Admin user exists
+    const users = storageService.getUsers();
+    const hasActiveAdmin = users.some(u => u.role === 'Admin' && u.status === 'Active');
+    if (!hasActiveAdmin && currentUser) {
+      storageService.saveUser(currentUser);
+    }
 
     storageService.logAudit('SETTINGS', 'SETTINGS', `استعادة نسخة احتياطية ناجحة (${backupPackage.metadata.type}) - تم تأمين نسخة سابقة: ${safetyBackupId}`);
 

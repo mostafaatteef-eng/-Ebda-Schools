@@ -132,6 +132,13 @@ export const OperationsCenterView: React.FC<OperationsCenterViewProps> = ({
     setDecision(OperationsService.evaluateGoLiveDecision());
   };
 
+  const handleCertifyAllGoLive = () => {
+    const updated = goLiveChecklist.map(item => ({ ...item, checked: true }));
+    setGoLiveChecklist(updated);
+    OperationsService.saveGoLiveChecklist(updated);
+    setDecision(OperationsService.evaluateGoLiveDecision());
+  };
+
   const handleToggleDailyChecklist = (section: 'startOfDay' | 'duringDay' | 'endOfDay', id: string) => {
     const updated = {
       ...dailyChecklist,
@@ -443,6 +450,12 @@ export const OperationsCenterView: React.FC<OperationsCenterViewProps> = ({
               </div>
 
               <div className="flex items-center gap-3">
+                <button
+                  onClick={handleCertifyAllGoLive}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition-colors"
+                >
+                  اعتماد وتأكيد كافة البنود
+                </button>
                 <div className="text-left font-mono text-xs font-bold text-slate-700">
                   {checkedGoLiveCount} / {totalGoLiveCount} مكتمل ({goLivePercentage}%)
                 </div>
@@ -543,7 +556,13 @@ export const OperationsCenterView: React.FC<OperationsCenterViewProps> = ({
                         <div className="font-bold text-slate-800">{chk.name}</div>
                         <div className="text-[11px] text-slate-500">{chk.message}</div>
                       </div>
-                      <span className="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <span
+                        className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] ${
+                          chk.status === 'PASS'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}
+                      >
                         {chk.status}
                       </span>
                     </div>

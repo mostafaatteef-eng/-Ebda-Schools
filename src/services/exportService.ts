@@ -1,7 +1,34 @@
 import * as XLSX from 'xlsx';
 import { AttendanceRecord, Employee, LeaveRecord, MonthSummaryItem, AnnualSummaryItem, AuditLogEntry } from '../types';
 
+/**
+ * Formula Injection Protection:
+ * Prefixes strings starting with =, +, -, @, \t, or \r with a single quote (')
+ * so spreadsheet software treats them strictly as plain text instead of executable formulas.
+ */
+export function sanitizeExcelValue(value: any): any {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length > 0 && ['=', '+', '-', '@', '\t', '\r'].includes(trimmed[0])) {
+      return `'${value}`;
+    }
+  }
+  return value;
+}
+
+export function sanitizeRow<T extends Record<string, any>>(row: T): T {
+  const cleanRow: any = {};
+  for (const key of Object.keys(row)) {
+    cleanRow[key] = sanitizeExcelValue(row[key]);
+  }
+  return cleanRow;
+}
+
 export class ExportService {
+  public static sanitizeExcelValue = sanitizeExcelValue;
+  public static sanitizeRow = sanitizeRow;
+
   /**
    * Export Full Database to Excel with all Sheets matching the Google Sheets architecture
    */
@@ -15,7 +42,7 @@ export class ExportService {
     const wb = XLSX.utils.book_new();
 
     // 1. Employees Sheet
-    const empData = employees.map(e => ({
+    const empData = employees.map(e => sanitizeRow({
       'رقم الموظف': e.id,
       'اسم الموظف': e.name,
       'الهوية الوطنية': e.nationalId || '',
@@ -35,7 +62,7 @@ export class ExportService {
     XLSX.utils.book_append_sheet(wb, wsEmp, 'Employees');
 
     // 2. Attendance Sheet
-    const attData = attendance.map(a => ({
+    const attData = attendance.map(a => sanitizeRow({
       'معرف السجل': a.id,
       'رقم الموظف': a.employeeId,
       'اسم الموظف': a.employeeName,
@@ -57,7 +84,7 @@ export class ExportService {
     XLSX.utils.book_append_sheet(wb, wsAtt, 'Attendance');
 
     // 3. Leaves Sheet
-    const lvData = leaves.map(l => ({
+    const lvData = leaves.map(l => sanitizeRow({
       'معرف الإجازة': l.id,
       'رقم الموظف': l.employeeId,
       'اسم الموظف': l.employeeName,
@@ -75,7 +102,7 @@ export class ExportService {
     XLSX.utils.book_append_sheet(wb, wsLeaves, 'Leaves');
 
     // 4. Settings Sheet
-    const setRows = Object.entries(settings).map(([k, v]) => ({
+    const setRows = Object.entries(settings).map(([k, v]) => sanitizeRow({
       'مفتاح الإعداد': k,
       'القيمة': Array.isArray(v) ? v.join(', ') : String(v)
     }));
@@ -83,7 +110,7 @@ export class ExportService {
     XLSX.utils.book_append_sheet(wb, wsSettings, 'Settings');
 
     // 5. Audit Log Sheet
-    const logsData = auditLogs.map(log => ({
+    const logsData = auditLogs.map(log => sanitizeRow({
       'المعرف': log.id,
       'الوقت والتاريخ': log.timestamp,
       'المستخدم': log.username,
@@ -137,7 +164,7 @@ export class ExportService {
         row['نسبة الالتزام'] = `${s.attendanceRate}%`;
       }
 
-      return row;
+      return sanitizeRow(row);
     });
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -150,7 +177,7 @@ export class ExportService {
    * Export Annual Summary
    */
   public static exportAnnualSummary(year: number, items: AnnualSummaryItem[]) {
-    const data = items.map(it => ({
+    const data = items.map(it => sanitizeRow({
       'رقم الموظف': it.employeeId,
       'اسم الموظف': it.employeeName,
       'القسم': it.department,
@@ -177,7 +204,7 @@ export class ExportService {
    * Export Leaves to Excel
    */
   public static exportLeavesToExcel(leaves: LeaveRecord[], fileName: string = 'سجل_الإجازات') {
-    const data = leaves.map((l, idx) => ({
+    const data = leaves.map((l, idx) => sanitizeRow({
       'م': idx + 1,
       'رقم الموظف': l.employeeId,
       'اسم الموظف': l.employeeName,
@@ -198,7 +225,8 @@ export class ExportService {
    * Generic Excel Export Helper for custom tables & daily records
    */
   public static exportToExcel(data: Record<string, any>[], fileName: string = 'Export', sheetName: string = 'Sheet1') {
-    const ws = XLSX.utils.json_to_sheet(data);
+    const sanitizedData = data.map(sanitizeRow);
+    const ws = XLSX.utils.json_to_sheet(sanitizedData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
     XLSX.writeFile(wb, `${fileName}.xlsx`);
