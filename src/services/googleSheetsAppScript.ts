@@ -52,7 +52,6 @@ var SHEETS = {
   SCHEDULE_SUBSTITUTIONS: 'Schedule_Substitutions',
   LESSON_INSTANCES: 'Lesson_Instances',
   LESSON_CONTENT: 'Lesson_Content',
-  PAYROLL: 'Payroll',
   ACADEMIC_YEARS: 'Academic_Years',
   STUDENT_ENROLLMENTS: 'Student_Enrollments',
   STUDENT_TRANSFERS: 'Student_Transfers',
@@ -108,7 +107,6 @@ function doGet(e) {
         scheduleSubstitutions: getSheetData(ss, SHEETS.SCHEDULE_SUBSTITUTIONS),
         lessonInstances: getSheetData(ss, SHEETS.LESSON_INSTANCES),
         lessonContent: getSheetData(ss, SHEETS.LESSON_CONTENT),
-        payroll: getSheetData(ss, SHEETS.PAYROLL),
         academicYears: getSheetData(ss, SHEETS.ACADEMIC_YEARS),
         studentEnrollments: getSheetData(ss, SHEETS.STUDENT_ENROLLMENTS),
         studentTransfers: getSheetData(ss, SHEETS.STUDENT_TRANSFERS),
@@ -227,26 +225,10 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. SECURITY GUARD: PAYROLL PROTECTION (Admin Only)
-    var isPayrollAction = (
-      action === 'getPayroll' || 
-      action === 'savePayroll' || 
-      action === 'bulkSavePayroll' || 
-      action === 'approvePayroll' || 
-      action === 'lockPayroll' || 
-      action === 'generatePayroll'
-    );
-    if (isPayrollAction && callerRole !== 'Admin') {
-      output.status = 'error';
-      output.errorCode = 'FORBIDDEN_PAYROLL_ACCESS';
-      output.message = 'غير مصرح بالوصول إلى بيانات الرواتب أو تعديلها. تتطلب صلاحية مدير النظام (Admin Only).';
-      return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 3. CONCURRENCY: Acquire Lock for batch writes & sensitive mutations
+    // 2. CONCURRENCY: Acquire Lock for batch writes & sensitive mutations
     var writeActions = [
       'syncAll', 'bulkSaveAttendance', 'bulkSaveStudents', 'batchSaveStudentEnrollments',
-      'savePayroll', 'bulkSavePayroll', 'approvePayroll', 'lockPayroll', 'saveStudentTransfer'
+      'saveStudentTransfer'
     ];
     if (writeActions.indexOf(action) !== -1) {
       try {
@@ -294,7 +276,6 @@ function doPost(e) {
       if (payload.scheduleSubstitutions) safeSetSheetData(SHEETS.SCHEDULE_SUBSTITUTIONS, payload.scheduleSubstitutions);
       if (payload.lessonInstances) safeSetSheetData(SHEETS.LESSON_INSTANCES, payload.lessonInstances);
       if (payload.lessonContent) safeSetSheetData(SHEETS.LESSON_CONTENT, payload.lessonContent);
-      if (payload.payroll && callerRole === 'Admin') safeSetSheetData(SHEETS.PAYROLL, payload.payroll);
       if (payload.academicYears) safeSetSheetData(SHEETS.ACADEMIC_YEARS, payload.academicYears);
       if (payload.studentEnrollments) safeSetSheetData(SHEETS.STUDENT_ENROLLMENTS, payload.studentEnrollments);
       if (payload.studentTransfers) safeSetSheetData(SHEETS.STUDENT_TRANSFERS, payload.studentTransfers);
@@ -420,13 +401,6 @@ function doPost(e) {
     } else if (action === 'addAuditLog' && payload) {
       appendRecord(ss, SHEETS.AUDIT_LOGS, payload);
       output.message = 'Audit log recorded!';
-    } else if ((action === 'savePayroll' || action === 'bulkSavePayroll') && payload && callerRole === 'Admin') {
-      if (Array.isArray(payload)) {
-        payload.forEach(function(rec) { upsertRecord(ss, SHEETS.PAYROLL, 'id', rec); });
-      } else {
-        upsertRecord(ss, SHEETS.PAYROLL, 'id', payload);
-      }
-      output.message = 'Payroll record(s) saved successfully!';
     } else {
       output.status = 'error';
       output.errorCode = 'UNKNOWN_ACTION';

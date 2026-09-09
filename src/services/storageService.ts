@@ -31,7 +31,6 @@ import {
   LessonInstance,
   LocationItem,
   ParentCommunicationLog,
-  PayrollRecord,
   PermissionMatrix,
   PermissionTypeConfig,
   PositiveBehaviorType,
@@ -71,7 +70,6 @@ import {
   DEFAULT_LEAVE_TYPES,
   DEFAULT_LOCATIONS,
   DEFAULT_PARENT_PORTAL_SETTINGS,
-  DEFAULT_PAYROLL_RULES,
   DEFAULT_PERMISSION_MATRIX,
   DEFAULT_PERMISSION_TYPES,
   DEFAULT_POSITIVE_BEHAVIOR_TYPES,
@@ -93,7 +91,6 @@ import { computeAttendanceDayReview, calculateStudentLateMinutes } from '../util
 import { SyncQueueService } from './syncQueueService';
 import { ParentService } from './parentService';
 import { NotificationService } from './notificationService';
-import { PayrollAttendanceSnapshot } from '../types_extended';
 
 const STORAGE_KEYS = {
   SETTINGS: 'ntss_school_settings_v3',
@@ -118,8 +115,6 @@ const STORAGE_KEYS = {
   SCHEDULE_SUBSTITUTIONS: 'ntss_schedule_substitutions_v3',
   LESSON_INSTANCES: 'ntss_lesson_instances_v3',
   LESSON_CONTENT: 'ntss_lesson_content_v3',
-  PAYROLL: 'ntss_payroll_v3',
-  PAYROLL_SNAPSHOTS: 'ntss_payroll_snapshots_v3',
   SYNC_QUEUE: 'ntss_sync_queue_v3',
   NOTIFICATIONS: 'ntss_notifications_v3',
   ACADEMIC_YEARS: 'ntss_academic_years_v3',
@@ -331,6 +326,17 @@ class StorageService {
       return { success: false, message: 'هذا الحساب معطل حالياً، يرجى مراجعة إدارة المدرسة' };
     }
 
+    // Enforce Staff-Only Scope: Student, Parent, and Teacher standalone logins
+    if (found.role === 'Student') {
+      return { success: false, message: 'لا توجد حسابات دخول للطلاب، النظام مخصص للطاقم المدرسي والإدارة فقط' };
+    }
+    if (found.role === 'Parent' && !settings.parentAccountsEnabled) {
+      return { success: false, message: 'بوابة أولياء الأمور غير مفعلة، النظام مخصص للإدارة المدرسية وفريق العمل فقط' };
+    }
+    if (found.role === 'Teacher' && !settings.teacherAccountsEnabled) {
+      return { success: false, message: 'حسابات المعلمين المستقلة غير مفعلة، يتم إدارة المعلمين عبر شئون المعلمين والعاملين' };
+    }
+
     // Check password if stored locally (supports plain text migration or hashed match)
     if (found.password) {
       const isPlainMatch = (found.password === cleanPassword);
@@ -393,7 +399,6 @@ class StorageService {
         alertRules: parsed.alertRules || DEFAULT_ALERT_RULES,
         leaveTypes: parsed.leaveTypes || DEFAULT_LEAVE_TYPES,
         permissionTypes: parsed.permissionTypes || DEFAULT_PERMISSION_TYPES,
-        payrollRules: parsed.payrollRules || DEFAULT_PAYROLL_RULES,
         allowanceTypes: parsed.allowanceTypes || DEFAULT_ALLOWANCE_TYPES,
         deductionTypes: parsed.deductionTypes || DEFAULT_DEDUCTION_TYPES,
         parentPortalSettings: parsed.parentPortalSettings || DEFAULT_PARENT_PORTAL_SETTINGS,
@@ -1693,142 +1698,6 @@ class StorageService {
     this.notifyChange();
     this.pushPost('saveHomework', prepared).catch(() => {});
     return prepared;
-  }
-
-  // ---------------- Payroll Engine ----------------
-  public getPayrollRecords(): PayrollRecord[] {
-    const user = this.getCurrentUser();
-    if (user && user.role !== 'Admin') {
-      this.logAudit('SECURITY_VIOLATION', 'PAYROLL', `محاولة وصول غير مصرح بها لمسير الرواتب من: ${user.fullName} (${user.role})`);
-      return [];
-    }
-    const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL);
-    if (!raw) return [];
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-
-  public savePayrollRecord(record: PayrollRecord): { success: boolean; message?: string } {
-    const user = this.getCurrentUser();
-    if (user && user.role !== 'Admin') {
-      this.logAudit('SECURITY_VIOLATION', 'PAYROLL', `محاولة تعديل مسير الرواتب غير مصرح بها من: ${user.fullName}`);
-      return { success: false, message: 'غير مصرح بتعديل سجلات الرواتب. الصلاحية مقصورة على مدير النظام.' };
-    }
-
-    const list = this.getPayrollRecords();
-    const idx = list.findIndex(r => r.id === record.id || (r.employeeId === record.employeeId && r.month === record.month && r.year === record.year));
-    const now = getCairoNowISO();
-
-    const prepared: PayrollRecord = {
-      ...record,
-      id: record.id || `PAY-${record.employeeId}-${record.year}-${record.month}`,
-      updatedAt: now,
-    };
-
-    if (idx >= 0) {
-      list[idx] = prepared;
-    } else {
-      list.push(prepared);
-    }
-
-    localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(list));
-    this.logAudit('UPDATE', 'PAYROLL', `تحديث مسير مرتب: ${prepared.employeeName} (${prepared.month}/${prepared.year})`);
-    this.notifyChange();
-    this.pushPost('savePayroll', prepared).catch(() => {});
-    return { success: true, message: 'تم حفظ سجل الراتب بنجاح' };
-  }
-
-  public savePayrollRecordsBatch(records: PayrollRecord[]): { success: boolean; message?: string } {
-    const user = this.getCurrentUser();
-    if (user && user.role !== 'Admin') {
-      this.logAudit('SECURITY_VIOLATION', 'PAYROLL', `محاولة تعديل دفعة رواتب غير مصرح بها من: ${user.fullName}`);
-      return { success: false, message: 'غير مصرح بتعديل مسير الرواتب.' };
-    }
-    localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(records));
-    this.logAudit('UPDATE', 'PAYROLL', `تحديث دفعة مسير الرواتب (${records.length} سجل)`);
-    this.notifyChange();
-    this.pushPost('bulkSavePayroll', records).catch(() => {});
-    return { success: true, message: 'تم حفظ دفعة الرواتب بنجاح' };
-  }
-
-  public generateMonthlyPayroll(month: number, year: number): PayrollRecord[] {
-    const employees = this.getEmployees().filter(e => e.status === 'Active');
-    const allAttendance = this.getAttendance();
-    const settings = this.getSettings();
-    const rules = settings.payrollRules || DEFAULT_PAYROLL_RULES;
-    const now = getCairoNowISO();
-
-    const payrollRecords: PayrollRecord[] = employees.map(emp => {
-      const basicSalary = emp.basicSalary || 0;
-      const allowances = emp.allowances || 0;
-      const dailyWage = rules.workDaysPerMonth > 0 ? basicSalary / rules.workDaysPerMonth : basicSalary / 30;
-
-      // Filter employee attendance for that month
-      const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
-      const empAttendance = allAttendance.filter(a => a.employeeId === emp.id && a.date.startsWith(monthPrefix));
-
-      const absentCount = empAttendance.filter(a => a.status === 'غائب').length;
-      const totalLateMins = empAttendance.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
-      const totalOvertimeHours = empAttendance.reduce((sum, a) => sum + (a.overtimeHours || 0), 0);
-
-      const absenceDeductions = Math.round(absentCount * dailyWage * rules.absenceDeductionMultiplier);
-      const hourlyWage = dailyWage / (emp.workingHours || 8);
-      const minuteWage = hourlyWage / 60;
-      const lateDeductions = Math.round(Math.max(0, totalLateMins - rules.lateGraceMinutes) * minuteWage * rules.lateMinuteDeductionRate);
-      
-      const overtimeAmount = Math.round(totalOvertimeHours * hourlyWage * rules.overtimeRate);
-      const totalGross = basicSalary + allowances + overtimeAmount;
-
-      let loanDeductions = 0;
-      let socialInsurance = 0;
-      if (rules.enableSocialInsuranceDeduction) {
-        socialInsurance = Math.round((basicSalary * rules.socialInsuranceRate) / 100);
-      }
-
-      const totalDeductions = absenceDeductions + lateDeductions + loanDeductions + socialInsurance;
-      const netSalary = Math.max(0, totalGross - totalDeductions);
-
-      return {
-        id: `PAY-${emp.id}-${year}-${month}`,
-        employeeId: emp.id,
-        employeeName: emp.name,
-        department: emp.department,
-        jobTitle: emp.jobTitle,
-        month,
-        year,
-        basicSalary,
-        allowances,
-        incentives: 0,
-        overtimeHours: totalOvertimeHours,
-        overtimeAmount,
-        totalGross,
-        absentDaysCount: absentCount,
-        absenceDeductions,
-        totalLateMinutes: totalLateMins,
-        lateDeductions,
-        loanDeductions: loanDeductions + socialInsurance,
-        otherDeductions: 0,
-        totalDeductions,
-        netSalary,
-        status: 'Draft',
-        createdAt: now,
-        updatedAt: now,
-      };
-    });
-
-    const currentList = this.getPayrollRecords();
-    const updatedList = currentList.filter(p => !(p.month === month && p.year === year));
-    updatedList.push(...payrollRecords);
-
-    localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(updatedList));
-    this.logAudit('CREATE', 'PAYROLL', `إنشاء مسير الرواتب الشهري لشهر (${month}/${year}) لعدد (${payrollRecords.length}) موظف ومعلم`);
-    this.notifyChange();
-    this.pushPost('bulkSavePayroll', payrollRecords).catch(() => {});
-
-    return payrollRecords;
   }
 
   // ---------------- Employees & Teachers ----------------
@@ -3397,29 +3266,6 @@ class StorageService {
     this.notifyChange();
     this.pushPost('saveParentCommunication', prepared).catch(() => {});
     return { success: true, message: 'تم تسجيل سجل التواصل مع ولي الأمر بنجاح' };
-  }
-
-  // ---------------- Payroll Attendance Snapshots ----------------
-  public getPayrollAttendanceSnapshots(): PayrollAttendanceSnapshot[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.PAYROLL_SNAPSHOTS);
-    if (!raw) return [];
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-
-  public savePayrollAttendanceSnapshot(snapshot: PayrollAttendanceSnapshot): void {
-    const list = this.getPayrollAttendanceSnapshots();
-    const idx = list.findIndex(s => s.id === snapshot.id);
-    if (idx >= 0) {
-      list[idx] = snapshot;
-    } else {
-      list.unshift(snapshot);
-    }
-    localStorage.setItem(STORAGE_KEYS.PAYROLL_SNAPSHOTS, JSON.stringify(list));
-    this.notifyChange();
   }
 
   // ---------------- Sync Queue & Notifications Accessors ----------------

@@ -73,6 +73,18 @@ export const STORAGE_KEYS = {
   EFFECTIVE_CONFIGS: 'ntss_effective_configs_v3',
   BACKUP_HISTORY: 'ntss_backup_history_v3',
   IMPORT_BATCHES: 'ntss_import_batches_v3',
+
+  // SAMAT MODULE KEYS (Phase 1 Foundation)
+  SAMAT_PROGRAMS: 'ntss_samat_programs_v1',
+  SAMAT_PROGRAM_GRADES: 'ntss_samat_program_grades_v1',
+  SAMAT_COMPETENCIES: 'ntss_samat_competencies_v1',
+  SAMAT_RUBRICS: 'ntss_samat_rubrics_v1',
+  SAMAT_RUBRIC_LEVELS: 'ntss_samat_rubric_levels_v1',
+  SAMAT_ROLE_ASSIGNMENTS: 'ntss_samat_role_assignments_v1',
+  SAMAT_SCORE_DEFINITIONS: 'ntss_samat_score_definitions_v1',
+  SAMAT_SCORE_VERSIONS: 'ntss_samat_score_versions_v1',
+  SAMAT_MIGRATIONS: 'ntss_samat_migrations_v1',
+  SAMAT_SETTINGS: 'ntss_samat_settings_v1',
 };
 
 export const DEFAULT_MASTER_DATA: MasterDataItem[] = [

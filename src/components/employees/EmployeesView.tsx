@@ -26,7 +26,7 @@ import {
 import { Employee, SalaryHistoryEntry, SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
-import { HRPayrollService } from '../../services/hrPayrollService';
+import { HRPayrollService } from '../../services/hrService';
 import { formatEgyptianCurrency, formatEgyptianDate } from '../../utils/egyptianTime';
 
 interface EmployeesViewProps {

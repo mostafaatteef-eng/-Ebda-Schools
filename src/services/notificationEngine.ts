@@ -15,7 +15,7 @@ export class NotificationEngine {
       pendingSubstitutionsCount: number;
       draftHomeworkCount: number;
       pendingBehaviorFollowupsCount: number;
-      payrollDraftCount: number;
+      payrollDraftCount?: number;
       syncFailedCount: number;
       missingLessonsCount: number;
       activeAcademicYearNeedsReview: boolean;
@@ -37,20 +37,6 @@ export class NotificationEngine {
           actionUrl: 'sync_modal',
           actionLabel: 'مزامنة الآن',
           count: context.syncFailedCount,
-        });
-      }
-
-      if (context.payrollDraftCount > 0) {
-        actions.push({
-          id: 'PA-ADM-PAYROLL',
-          type: 'PAYROLL_REVIEW',
-          title: `مسير رواتب جاهز للمراجعة والاعتماد النهائي`,
-          description: 'تم احتساب مستحقات الشهر والخصومات بناءً على لقطة الحضور، بانتظار اعتماد المدير.',
-          priority: 'URGENT',
-          dueDate: today,
-          actionUrl: 'payroll',
-          actionLabel: 'فتح مسير الرواتب',
-          count: context.payrollDraftCount,
         });
       }
 

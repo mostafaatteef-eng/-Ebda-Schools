@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Activity,
-  Banknote,
   BookOpen,
   CalendarDays,
   CalendarRange,
@@ -38,7 +37,6 @@ export type ActiveTab =
   | 'daily_attendance'
   | 'monthly_matrix'
   | 'employees'
-  | 'payroll'
   | 'leaves'
   | 'master_data'
   | 'import_center'
@@ -180,13 +178,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'إدارة الإجازات والأذونات الرسمية',
           icon: CalendarRange,
           permission: 'leaves.view',
-        },
-        {
-          id: 'payroll',
-          label: 'محرك ومسير الرواتب',
-          icon: Banknote,
-          badge: 'إدارة فقط',
-          adminOnly: true,
         },
       ],
     },

@@ -1,16 +1,19 @@
 export type UserRole =
   | 'Admin'
+  | 'SchoolDirector'
   | 'StudentAffairs'
   | 'TeacherAffairs'
-  | 'Teacher'
   | 'SocialSpecialist'
-  | 'Parent'
+  | 'TrainingOfficer'
+  | 'QualityOfficer'
   | 'HR'
   | 'Supervisor'
   | 'BehaviorOfficer'
-  | 'PayrollOfficer'
   | 'Employee'
-  | 'Viewer';
+  | 'Viewer'
+  | 'Teacher' // Deprecated: preserved for historical/schema typing only, forbidden from login
+  | 'Parent'  // Deprecated: preserved for historical/schema typing only, forbidden from login
+  | 'Student'; // Deprecated: preserved for historical/schema typing only, forbidden from login
 
 export type PermissionKey =
   | 'students.view'
@@ -98,10 +101,6 @@ export type PermissionKey =
   | 'parentHomework.viewOwn'
   | 'parentBehavior.viewOwn'
   | 'parentNotifications.viewOwn'
-  | 'payroll.view'
-  | 'payroll.manage'
-  | 'payroll.approve'
-  | 'payroll.lock'
   | 'settings.manage'
   | 'users.manage'
   | 'audit.view'
@@ -693,13 +692,13 @@ export interface BehaviorScoreLedger {
   pointsAwarded?: number;
   grade?: string;
   classroom?: string;
-  balanceAfter: number;
+  balanceAfter?: number;
   academicYearId?: string;
   date: string;
   reason: string;
   createdBy?: string;
   recordedBy?: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 /* =========================================================================
@@ -1640,6 +1639,27 @@ export interface SystemSettings {
   // الإصدار والمزامنة
   configVersion: string;
   lastConfigUpdate: string;
+
+  // إعدادات النطاق الجديد - نظام الإدارة المدرسية وفريق العمل فقط (Staff-Only ERP Feature Flags)
+  studentAccountsEnabled?: boolean; // false
+  parentAccountsEnabled?: boolean; // false
+  teacherAccountsEnabled?: boolean; // false
+  schoolScheduleEnabled?: boolean; // false
+  samatSchedulingEnabled?: boolean; // false
+  samatSessionAttendanceEnabled?: boolean; // false
+
+  // إعدادات منظومة سمات لبناء الشخصية (SAMAT Phase 1)
+  samatSettings?: {
+    enabled: boolean;
+    pilotMode: boolean;
+    defaultAcademicYearId?: string;
+    allowParentView: boolean;
+    allowStudentView: boolean;
+    requireEvidenceForOfficialAssessment: boolean;
+    confidentialMentoringEnabled: boolean;
+    configVersion: string;
+    lastUpdated: string;
+  };
 }
 
 /* =========================================================================
@@ -1668,7 +1688,12 @@ export interface AuditLogEntry {
     | 'SETTINGS'
     | 'AUTH'
     | 'IMPORT'
-    | 'SYNC';
+    | 'SYNC'
+    | 'SAMAT_PROGRAM'
+    | 'SAMAT_ROLE_ASSIGNMENT'
+    | 'SAMAT_MIGRATION'
+    | 'SAMAT_SECURITY'
+    | 'SAMAT_ASSESSMENT';
   targetEntity?: string;
   targetId?: string;
   details: string;

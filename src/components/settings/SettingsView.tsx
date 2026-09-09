@@ -130,7 +130,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, currentUse
     const studentAttendance = storageService.getStudentAttendance();
     const leaves = storageService.getLeaves();
     const users = storageService.getUsers();
-    const payroll = storageService.getPayrollRecords();
     const violations = storageService.getBehaviorViolations();
     const schedule = storageService.getSchedule();
 
@@ -140,7 +139,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, currentUse
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(studentAttendance), 'حضور_الطلاب');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(employees), 'الموظفون_والمعلمون');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(attendance), 'حضور_الموظفين');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payroll), 'مسير_الرواتب');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(violations), 'سجل_السلوك_والمخالفات');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(schedule), 'الجدول_المدرسي');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(leaves), 'الإجازات');

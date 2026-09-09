@@ -201,21 +201,6 @@ export class SystemHealthService {
       recommendedAction: activeYear ? undefined : 'يجب تفعيل عام دراسي من شاشة الأعوام الدراسية',
     });
 
-    // 6. Payroll Health (Admin only, STRICT zero sensitive figures)
-    if (isPayrollAdmin) {
-      const snapshots = storageService.getPayrollAttendanceSnapshots();
-      const unlockedSnapshots = snapshots.filter(s => !s.isLocked);
-      checks.push({
-        id: 'CHK-PAY-01',
-        category: 'PAYROLL',
-        title: 'محرك الرواتب وأقفال المسير المالي',
-        description: 'سلامة لقطات الحضور والانصراف المثبتة بدون أي تسريب للرواتب',
-        status: unlockedSnapshots.length > 0 ? 'WARNING' : 'HEALTHY',
-        metric: unlockedSnapshots.length > 0 ? `${unlockedSnapshots.length} لقطة غير مقفلة` : 'جميع اللقطات مقفلة',
-        details: 'البيانات المالية معزولة ومشفرة ولا يمكن الوصول إليها إلا لمدير النظام',
-      });
-    }
-
     // Determine overall status
     let overallStatus: HealthSeverity = 'HEALTHY';
     if (checks.some(c => c.status === 'CRITICAL')) overallStatus = 'CRITICAL';

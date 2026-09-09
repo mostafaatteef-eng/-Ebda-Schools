@@ -81,7 +81,7 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
 
   const filteredGrades = useMemo(() => {
     if (selectedStage === 'all') return dynamicGrades;
-    return dynamicGrades.filter(g => g.stage === selectedStage);
+    return dynamicGrades.filter(g => g.academicStage === selectedStage);
   }, [dynamicGrades, selectedStage]);
 
   // Selected filters for matrices
@@ -342,7 +342,7 @@ export const ScheduleMatrixView: React.FC<ScheduleMatrixViewProps> = ({
                   setSelectedStage(val);
                   const matching = val === 'all'
                     ? dynamicGrades[0]?.name
-                    : dynamicGrades.find(g => g.stage === val)?.name;
+                    : dynamicGrades.find(g => g.academicStage === val)?.name;
                   if (matching) setSelectedGrade(matching);
                 }}
                 className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"

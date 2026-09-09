@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
-  Banknote,
   BookOpen,
   Calendar,
   CheckCircle2,
@@ -23,7 +22,7 @@ import {
   Users,
   UserX,
 } from 'lucide-react';
-import { AttendanceRecord, Employee, LeaveRecord, PayrollRecord, Student, SystemSettings, User } from '../../types';
+import { AttendanceRecord, Employee, LeaveRecord, Student, SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { NotificationEngine } from '../../services/notificationEngine';
 import { PendingActionsCard } from './PendingActionsCard';
@@ -91,18 +90,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const missingLessonsCount = Math.max(0, todayPeriods.length - todayLessonsLogged.length);
   const lessonCoverageRate = todayPeriods.length > 0 ? Math.round((todayLessonsLogged.length / todayPeriods.length) * 100) : 100;
 
-  // Payroll Data (Admin Only)
-  const currentDate = new Date();
-  const currentMonth = currentDate.getMonth() + 1;
-  const currentYear = currentDate.getFullYear();
-  const payrollRecords = useMemo(() => storageService.getPayrollRecords(), []);
-  const currentMonthPayroll = payrollRecords.filter(p => p.month === currentMonth && p.year === currentYear);
-  const payrollStatus = currentMonthPayroll.length > 0 ? currentMonthPayroll[0].status : 'Draft';
-  const totalGrossPayroll = currentMonthPayroll.reduce((sum, r) => sum + (r.totalGross || 0), 0);
-  const totalDeductionsPayroll = currentMonthPayroll.reduce((sum, r) => sum + (r.totalDeductions || 0), 0);
-  const totalNetPayroll = currentMonthPayroll.reduce((sum, r) => sum + (r.netSalary || 0), 0);
-  const uncalculatedPayrollCount = Math.max(0, activeEmployees.length - currentMonthPayroll.length);
-
   // Dynamic Pending Actions for Admin
   const adminPendingActions = useMemo(() => {
     return NotificationEngine.generatePendingActions('Admin', currentUser?.id || '001', {
@@ -112,12 +99,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       pendingSubstitutionsCount: pendingSubstitutions.length,
       draftHomeworkCount: 0,
       pendingBehaviorFollowupsCount: activeCasesCount,
-      payrollDraftCount: uncalculatedPayrollCount > 0 ? 1 : 0,
       syncFailedCount: SyncQueueService.getFailedCount(),
       missingLessonsCount,
       activeAcademicYearNeedsReview: false,
     });
-  }, [students.length, studentUnrecordedCount, pendingSubstitutions.length, activeCasesCount, uncalculatedPayrollCount, missingLessonsCount, currentUser?.id]);
+  }, [students.length, studentUnrecordedCount, pendingSubstitutions.length, activeCasesCount, missingLessonsCount, currentUser?.id]);
 
   const userName = currentUser?.fullName?.split(' ')[0] || 'مدير النظام';
 
@@ -304,34 +290,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/60">
               <span className="text-[11px] text-slate-500 font-bold">حالات إرشاد نشطة</span>
               <div className="text-xl font-black text-amber-600 mt-1">{activeCasesCount}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Payroll Engine Status Card (Admin Only) */}
-        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
-              <Banknote className="w-4 h-4 text-emerald-600" />
-              <span>مسير الرواتب والمحرك المالي (شهر {currentMonth} / {currentYear})</span>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
-              خاص بالإدارة
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/60">
-              <span className="text-[11px] text-slate-500 font-bold">صافي المستحقات المقدرة</span>
-              <div className="text-lg font-black text-emerald-700 mt-1">
-                {formatEgyptianCurrency(totalNetPayroll)}
-              </div>
-            </div>
-            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/60">
-              <span className="text-[11px] text-slate-500 font-bold">حالة المسير</span>
-              <div className="text-sm font-black text-slate-800 mt-1">
-                {payrollStatus === 'Approved' ? 'معتمد رسمياً' : payrollStatus === 'Paid' ? 'مدفوع' : 'مسودة قيد المراجعة'}
-              </div>
             </div>
           </div>
         </div>

@@ -495,75 +495,7 @@ export class ReportService {
       exportFormats: ['EXCEL', 'PDF', 'PRINT'],
       isActive: true,
     },
-
-    /* =========================================================================
-     * 5. تقارير الرواتب والمحرك المالي (Payroll Reports - STRICT ADMIN ONLY)
-     * ========================================================================= */
-    {
-      id: 'REP-PAY-01',
-      key: 'payroll_summary',
-      name: 'الملخص المالي الشامل لمسير الرواتب',
-      module: 'PAYROLL',
-      description: 'كشف مالي إجمالي للرواتب الأساسية، الاستحقاقات، الاستقطاعات، وصافي المنصرف شهرياً',
-      adminOnly: true,
-      availableFilters: [
-        { key: 'month', label: 'الشهر', type: 'month', defaultValue: String(new Date().getMonth() + 1) },
-        { key: 'year', label: 'السنة', type: 'year', defaultValue: String(new Date().getFullYear()) },
-      ],
-      availableColumns: [
-        { key: 'index', label: 'م', isDefaultVisible: true, align: 'center' },
-        { key: 'employeeId', label: 'الرقم الوظيفي', isDefaultVisible: true, align: 'center' },
-        { key: 'employeeName', label: 'اسم الموظف', isDefaultVisible: true },
-        { key: 'department', label: 'القسم', isDefaultVisible: true },
-        { key: 'basicSalary', label: 'الأساسي (ج.م)', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'totalAllowances', label: 'البدلات والمكافآت', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'overtimeAmount', label: 'الأجر الإضافي', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'grossSalary', label: 'إجمالي الاستحقاق', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'absenceDeduction', label: 'خصم الغياب', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'lateDeduction', label: 'خصم التأخير', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'totalDeductions', label: 'إجمالي الاستقطاع', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'netSalary', label: 'صافي الراتب (ج.م)', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'status', label: 'حالة الصرف', isDefaultVisible: true, align: 'center' },
-      ],
-      exportFormats: ['EXCEL', 'PDF', 'PRINT'],
-      isActive: true,
-    },
-    {
-      id: 'REP-PAY-02',
-      key: 'payroll_snapshot_audit',
-      name: 'سجل لقطات الحضور المثبتة للمسير (Snapshots)',
-      module: 'PAYROLL',
-      description: 'مراجعة الأرقام المعتمدة المؤثرة على الرواتب والمغلقة تأمينياً ضد التعديل',
-      adminOnly: true,
-      availableFilters: [
-        { key: 'month', label: 'الشهر', type: 'month', defaultValue: String(new Date().getMonth() + 1) },
-        { key: 'year', label: 'السنة', type: 'year', defaultValue: String(new Date().getFullYear()) },
-      ],
-      availableColumns: [
-        { key: 'index', label: 'م', isDefaultVisible: true, align: 'center' },
-        { key: 'employeeId', label: 'الرقم الوظيفي', isDefaultVisible: true, align: 'center' },
-        { key: 'employeeName', label: 'اسم الموظف', isDefaultVisible: true },
-        { key: 'workingDays', label: 'أيام العمل', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'presentDays', label: 'الحضور الفعلي', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'absentDays', label: 'أيام الغياب', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'lateMinutes', label: 'دقائق التأخير', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'overtimeHours', label: 'ساعات الإضافي', isDefaultVisible: true, align: 'center', isNumeric: true },
-        { key: 'isLocked', label: 'حالة القفل', isDefaultVisible: true, align: 'center' },
-      ],
-      exportFormats: ['EXCEL', 'PDF', 'PRINT'],
-      isActive: true,
-    },
   ];
-
-  /**
-   * Security Guard: Ensure payroll reports are accessed exclusively by Admins
-   */
-  public static requirePayrollAdmin(currentUser: User | null): boolean {
-    if (!currentUser || currentUser.role !== 'Admin') {
-      return false;
-    }
-    return true;
-  }
 
   /**
    * Execute Report with Service-Side Filtering, Sorting, Column Projection, and Pagination
@@ -1066,48 +998,6 @@ export class ReportService {
             daysCount: l.daysCount,
             status: l.status,
             approvedBy: l.approvedBy || '-',
-          }));
-      }
-
-      case 'payroll_summary': {
-        const payroll = storageService.getPayrollRecords();
-        const month = Number(filters.month || new Date().getMonth() + 1);
-        const year = Number(filters.year || new Date().getFullYear());
-
-        return payroll
-          .filter(p => p.month === month && p.year === year)
-          .map(p => ({
-            employeeId: p.employeeId,
-            employeeName: p.employeeName,
-            department: p.department,
-            basicSalary: p.basicSalary,
-            totalAllowances: (p.allowances || 0) + (p.bonuses || 0),
-            overtimeAmount: p.overtimeAmount || 0,
-            grossSalary: p.grossSalary,
-            absenceDeduction: p.absenceDeduction || 0,
-            lateDeduction: p.lateDeduction || 0,
-            totalDeductions: p.totalDeductions,
-            netSalary: p.netSalary,
-            status: p.status === 'Paid' ? 'مصروف ومحول' : p.status === 'Approved' ? 'معتمد' : 'مسودة',
-          }));
-      }
-
-      case 'payroll_snapshot_audit': {
-        const snapshots = storageService.getPayrollAttendanceSnapshots();
-        const month = Number(filters.month || new Date().getMonth() + 1);
-        const year = Number(filters.year || new Date().getFullYear());
-
-        return snapshots
-          .filter(s => s.month === month && s.year === year)
-          .map(s => ({
-            employeeId: s.employeeId,
-            employeeName: s.employeeName,
-            workingDays: s.workingDays,
-            presentDays: s.presentDays,
-            absentDays: s.absentDays,
-            lateMinutes: s.lateMinutes,
-            overtimeHours: s.overtimeHours,
-            isLocked: s.isLocked ? 'مقفل ومعتمد' : 'مفتوح',
           }));
       }
 

@@ -27,7 +27,6 @@ import { DailyAttendanceView } from './components/attendance/DailyAttendanceView
 import { MonthlyMatrixView } from './components/attendance/MonthlyMatrixView';
 import { AnnualSummaryView } from './components/summary/AnnualSummaryView';
 import { EmployeesView } from './components/employees/EmployeesView';
-import { PayrollView } from './components/payroll/PayrollView';
 import { LeavesView } from './components/leaves/LeavesView';
 import { ReportsView } from './components/reports/ReportsView';
 import { UsersView } from './components/users/UsersView';
@@ -40,6 +39,7 @@ import { SystemHealthView } from './components/health/SystemHealthView';
 import { OperationsCenterView } from './components/operations/OperationsCenterView';
 import { LoginView } from './components/auth/LoginView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
+import { runMigrationScope008RemoveSamatPayroll } from './services/migrationScope008RemoveSamatPayroll';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
@@ -57,6 +57,11 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedReportKey, setSelectedReportKey] = useState<string | undefined>();
   const [selectedReportFilters, setSelectedReportFilters] = useState<Record<string, any> | undefined>();
+
+  // Run scope reduction migration on boot (archives SAMAT and Payroll data safely)
+  useEffect(() => {
+    runMigrationScope008RemoveSamatPayroll();
+  }, []);
 
   // Subscribe to storage changes
   useEffect(() => {
@@ -164,9 +169,6 @@ export default function App() {
 
       case 'parent_portal':
         return <ParentPortalView currentUser={currentUser} />;
-
-      case 'payroll':
-        return <PayrollView />;
 
       case 'daily_attendance':
         return (

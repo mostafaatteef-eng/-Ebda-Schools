@@ -1,4 +1,5 @@
 import { User } from '../types';
+import { storageService } from '../services/storageService';
 
 /**
  * Resolves the primary landing route for any user based strictly on their role.
@@ -9,23 +10,28 @@ export function resolveDefaultRouteForCurrentUser(user: User | null): string {
 
   switch (user.role) {
     case 'Admin':
+    case 'SchoolDirector':
       return 'dashboard';
     case 'StudentAffairs':
       return 'students';
     case 'TeacherAffairs':
     case 'HR':
       return 'employees';
-    case 'Teacher':
-      return 'teacher_portal';
     case 'SocialSpecialist':
     case 'BehaviorOfficer':
       return 'behavior';
-    case 'Parent':
-      return 'parent_day_view';
+    case 'TrainingOfficer':
+      return 'employees';
+    case 'QualityOfficer':
+      return 'reports';
     case 'Supervisor':
       return 'dashboard';
     case 'Viewer':
       return 'reports';
+    case 'Teacher':
+      return 'teacher_portal';
+    case 'Parent':
+      return 'parent_day_view';
     default:
       return 'dashboard';
   }
@@ -52,12 +58,26 @@ export function clearPreviousNavigationState(): void {
 export function canAccessTab(user: User | null, tab: string): boolean {
   if (!user) return false;
 
-  // 1. Admin has access to all operational views
-  if (user.role === 'Admin') return true;
+  // SAMAT and Payroll modules are completely retired and decommissioned from the system
+  if (tab === 'samat' || tab === 'payroll') {
+    return false;
+  }
+
+  const settings = storageService.getSettings();
+
+  // Hide Teacher Portal and Parent Portals if their accounts/features are disabled
+  if (tab === 'teacher_portal' && !settings.teacherAccountsEnabled && user.role !== 'Teacher') {
+    return false;
+  }
+  if ((tab === 'parent_portal' || tab === 'parent_day_view') && !settings.parentAccountsEnabled && user.role !== 'Parent') {
+    return false;
+  }
+
+  // 1. Admin and School Director have access to all operational views
+  if (user.role === 'Admin' || user.role === 'SchoolDirector') return true;
 
   // 2. Strict Admin-Only Modules (Forbidden to ALL other roles)
   const adminOnlyTabs = [
-    'payroll',
     'users',
     'settings',
     'operations',
@@ -71,15 +91,13 @@ export function canAccessTab(user: User | null, tab: string): boolean {
     return false;
   }
 
-  // 3. Parent Role Isolation
+  // 3. Parent Role Isolation (if enabled)
   if (user.role === 'Parent') {
     return tab === 'parent_day_view' || tab === 'parent_portal';
   }
 
-  // 4. Teacher Role Isolation
+  // 4. Teacher Role Isolation (if enabled)
   if (user.role === 'Teacher') {
-    // Teachers are strictly restricted to the Teacher Portal
-    // (which includes Today's timeline, weekly schedule, homework, substitutions, own leaves, notifications)
     return tab === 'teacher_portal';
   }
 
@@ -101,14 +119,37 @@ export function canAccessTab(user: User | null, tab: string): boolean {
     return allowed.includes(tab);
   }
 
-  // 8. Supervisor
+  // 8. Training Officer
+  if (user.role === 'TrainingOfficer') {
+    const allowed = ['dashboard', 'employees', 'daily_attendance', 'leaves', 'reports'];
+    return allowed.includes(tab);
+  }
+
+  // 10. Quality Officer
+  if (user.role === 'QualityOfficer') {
+    const allowed = [
+      'dashboard',
+      'students',
+      'student_attendance',
+      'behavior',
+      'employees',
+      'daily_attendance',
+      'monthly_matrix',
+      'leaves',
+      'reports',
+      'audit',
+      'system_health',
+    ];
+    return allowed.includes(tab);
+  }
+
+  // 11. Supervisor
   if (user.role === 'Supervisor') {
     const allowed = [
       'dashboard',
       'students',
       'student_attendance',
       'behavior',
-      'teacher_portal',
       'employees',
       'daily_attendance',
       'monthly_matrix',
@@ -117,7 +158,7 @@ export function canAccessTab(user: User | null, tab: string): boolean {
     return allowed.includes(tab);
   }
 
-  // 9. Viewer
+  // 12. Viewer
   if (user.role === 'Viewer') {
     const allowed = ['dashboard', 'reports'];
     return allowed.includes(tab);

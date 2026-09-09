@@ -116,21 +116,48 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
   const getRoleBadge = (r: UserRole) => {
     switch (r) {
       case 'Admin':
+      case 'SchoolDirector':
         return (
           <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            مدير نظام (Admin)
+            {r === 'SchoolDirector' ? 'مدير المدرسة' : 'مدير نظام (Admin)'}
           </span>
         );
+      case 'StudentAffairs':
+        return (
+          <span className="bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+            شؤون الطلاب والقيد
+          </span>
+        );
+      case 'TeacherAffairs':
       case 'HR':
         return (
           <span className="bg-teal-50 text-[#008e8b] border border-teal-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            مسؤول موارد بشرية (HR)
+            شئون المعلمين والعاملين
+          </span>
+        );
+      case 'SocialSpecialist':
+      case 'BehaviorOfficer':
+        return (
+          <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+            أخصائي اجتماعي / انضباط
+          </span>
+        );
+      case 'TrainingOfficer':
+        return (
+          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+            مسؤول التدريب المهني
+          </span>
+        );
+      case 'QualityOfficer':
+        return (
+          <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+            مسؤول الجودة
           </span>
         );
       case 'Supervisor':
         return (
           <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            مشرف قسم (Supervisor)
+            مشرف تربوي (Supervisor)
           </span>
         );
       case 'Viewer':
@@ -417,15 +444,17 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                     onChange={e => setRole(e.target.value as UserRole)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
                   >
-                    <option value="Admin">مدير النظام (Admin) — كامل الصلاحيات والرواتب</option>
-                    <option value="StudentAffairs">شؤون الطلاب (Student Affairs) — سجلات وحضور الطلاب</option>
-                    <option value="TeacherAffairs">شؤون المعلمين (Teacher Affairs) — المعلمون والدوام</option>
-                    <option value="Teacher">معلم (Teacher) — الحصص ورصد الطلاب والدروس</option>
-                    <option value="SocialSpecialist">أخصائي اجتماعي (Social Specialist) — السلوك والانضباط</option>
-                    <option value="Parent">ولي أمر (Parent) — متابعة الأبناء</option>
-                    <option value="HR">مسؤول موارد بشرية (HR)</option>
-                    <option value="Supervisor">مشرف عام (Supervisor)</option>
-                    <option value="Viewer">مشاهد فقط (Viewer)</option>
+                    <option value="Admin">مدير النظام (Admin) — كامل الصلاحيات الإدارية</option>
+                    <option value="SchoolDirector">مدير المدرسة (School Director) — إشراف عام واعتمادات</option>
+                    <option value="StudentAffairs">شؤون الطلاب والقيد (Student Affairs) — سجلات وقبول وحضور</option>
+                    <option value="TeacherAffairs">شؤون المعلمين (Teacher Affairs) — سجلات الهيئة والدوام</option>
+                    <option value="HR">الموارد البشرية (HR) — الإجازات وملفات العاملين</option>
+                    <option value="SocialSpecialist">أخصائي اجتماعي (Social Specialist) — السلوك والانضباط المدرسي</option>
+                    <option value="TrainingOfficer">مسؤول التدريب المهني (Training Officer) — تقييم وتطوير الكادر</option>
+                    <option value="QualityOfficer">مسؤول الجودة (Quality Officer) — تقارير المعايير والتدقيق</option>
+                    <option value="Supervisor">مشرف تربوي (Supervisor) — متابعة الفصول والأداء</option>
+                    <option value="BehaviorOfficer">مسؤول الانضباط (Behavior Officer) — رصد ومتابعة السلوك</option>
+                    <option value="Viewer">مشاهد فقط (Viewer) — استعراض السجلات دون تعديل</option>
                   </select>
                 </div>
 

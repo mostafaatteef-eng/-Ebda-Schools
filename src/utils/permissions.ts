@@ -2,17 +2,20 @@ import { PermissionKey, Student, User, UserRole } from '../types';
 
 export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
   Admin: 'مدير النظام',
-  StudentAffairs: 'شئون الطلاب',
-  TeacherAffairs: 'شئون المعلمين',
-  Teacher: 'مدرس / معلم',
-  SocialSpecialist: 'أخصائي اجتماعي',
-  Parent: 'ولي أمر',
+  SchoolDirector: 'مدير المدرسة',
+  StudentAffairs: 'شئون الطلاب والقيد',
+  TeacherAffairs: 'شئون المعلمين والعاملين',
+  SocialSpecialist: 'الأخصائي الاجتماعي',
+  TrainingOfficer: 'مسئول التدريب والتوجيه المهني',
+  QualityOfficer: 'مسئول الجودة',
   HR: 'الموارد البشرية وشئون العاملين',
   Supervisor: 'مشرف تربوي / إداري',
   BehaviorOfficer: 'مسؤول السلوك والانضباط',
-  PayrollOfficer: 'محاسب الرواتب',
   Employee: 'موظف',
   Viewer: 'مستعرض (قراءة فقط)',
+  Teacher: 'معلم (سجل موظف - غير مصرح بالدخول)',
+  Parent: 'ولي أمر (جهة اتصال - غير مصرح بالدخول)',
+  Student: 'طالب (سجل مدرسي - لا يوجد حساب)',
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<PermissionKey, boolean>>> = {
@@ -102,10 +105,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'parentHomework.viewOwn': true,
     'parentBehavior.viewOwn': true,
     'parentNotifications.viewOwn': true,
-    'payroll.view': true,
-    'payroll.manage': true,
-    'payroll.approve': true,
-    'payroll.lock': true,
     'settings.manage': true,
     'users.manage': true,
     'audit.view': true,
@@ -189,10 +188,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': false,
     'homework.publish': false,
     'parentPortal.access': false,
-    'payroll.view': false,
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
@@ -276,10 +271,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': false,
     'homework.publish': false,
     'parentPortal.access': false,
-    'payroll.view': false, // STRICTLY FORBIDDEN
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
@@ -363,10 +354,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': true,
     'homework.publish': true,
     'parentPortal.access': false,
-    'payroll.view': false,
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
@@ -450,10 +437,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': false,
     'homework.publish': false,
     'parentPortal.access': false,
-    'payroll.view': false,
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
@@ -545,10 +528,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'parentHomework.viewOwn': true,
     'parentBehavior.viewOwn': true,
     'parentNotifications.viewOwn': true,
-    'payroll.view': false,
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
@@ -632,10 +611,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': false,
     'homework.publish': false,
     'parentPortal.access': false,
-    'payroll.view': false, // Strict: Admin only for payroll
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
@@ -719,10 +694,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': true,
     'homework.publish': true,
     'parentPortal.access': false,
-    'payroll.view': false,
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
@@ -806,101 +777,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': false,
     'homework.publish': false,
     'parentPortal.access': false,
-    'payroll.view': false,
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
     'reports.view': true,
-  },
-  PayrollOfficer: {
-    'students.view': false,
-    'students.create': false,
-    'students.edit': false,
-    'students.delete': false,
-    'students.import': false,
-    'studentAttendance.view': false,
-    'studentAttendance.create': false,
-    'studentAttendance.edit': false,
-    'studentAttendance.delete': false,
-    'schoolAttendance.view': false,
-    'schoolAttendance.create': false,
-    'schoolAttendance.edit': false,
-    'schoolAttendance.approve': false,
-    'schoolAttendance.lock': false,
-    'schoolAttendance.overrideLocked': false,
-    'classAttendance.view': false,
-    'classAttendance.create': false,
-    'classAttendance.edit': false,
-    'classAttendance.manageOwnLessons': false,
-    'academicYears.view': true,
-    'academicYears.create': false,
-    'academicYears.edit': false,
-    'academicYears.close': false,
-    'academicYears.reopen': false,
-    'studentPromotion.view': false,
-    'studentPromotion.execute': false,
-    'studentPromotion.rollback': false,
-    'student360.view': false,
-    'student360.viewAttendance': false,
-    'student360.viewBehavior': false,
-    'student360.viewParentCommunication': false,
-    'student360.editNotes': false,
-    'teachers.view': true,
-    'teachers.create': false,
-    'teachers.edit': false,
-    'teachers.delete': false,
-    'teachers.import': false,
-    'teacherPortal.access': false,
-    'teacherSchedule.viewOwn': false,
-    'teacherAttendance.view': true,
-    'teacherAttendance.create': false,
-    'teacherAttendance.edit': false,
-    'teacherAttendance.delete': false,
-    'leaves.view': false,
-    'leaves.create': false,
-    'leaves.edit': false,
-    'leaves.delete': false,
-    'behavior.view': false,
-    'behavior.create': false,
-    'behavior.edit': false,
-    'behavior.delete': false,
-    'behaviorCases.view': false,
-    'behaviorCases.create': false,
-    'behaviorCases.edit': false,
-    'behaviorCases.close': false,
-    'behaviorTypes.manage': false,
-    'behaviorPoints.manage': false,
-    'positiveBehavior.create': false,
-    'parentCommunication.view': false,
-    'parentCommunication.create': false,
-    'schedule.view': false,
-    'schedule.manage': false,
-    'schedule.publish': false,
-    'schedule.cancelLesson': false,
-    'schedule.exportPdf': false,
-    'schedule.manageSubstitution': false,
-    'schedule.viewConflicts': false,
-    'lessonContent.view': false,
-    'lessonContent.create': false,
-    'lessonContent.edit': false,
-    'lessonContent.editOwn': false,
-    'lessonContent.publish': false,
-    'lessonResources.manage': false,
-    'homework.create': false,
-    'homework.editOwn': false,
-    'homework.publish': false,
-    'parentPortal.access': false,
-    'payroll.view': false, // System Rule: Admin only for payroll
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
-    'settings.manage': false,
-    'users.manage': false,
-    'audit.view': false,
-    'reports.view': false,
   },
   Employee: {
     'students.view': false,
@@ -980,10 +860,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': false,
     'homework.publish': false,
     'parentPortal.access': false,
-    'payroll.view': false,
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
@@ -1067,15 +943,115 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permissio
     'homework.editOwn': false,
     'homework.publish': false,
     'parentPortal.access': false,
-    'payroll.view': false,
-    'payroll.manage': false,
-    'payroll.approve': false,
-    'payroll.lock': false,
     'settings.manage': false,
     'users.manage': false,
     'audit.view': false,
     'reports.view': true,
   },
+  SchoolDirector: {
+    'students.view': true,
+    'students.create': true,
+    'students.edit': true,
+    'students.delete': true,
+    'students.import': true,
+    'studentAttendance.view': true,
+    'studentAttendance.create': true,
+    'studentAttendance.edit': true,
+    'studentAttendance.delete': true,
+    'schoolAttendance.view': true,
+    'schoolAttendance.create': true,
+    'schoolAttendance.edit': true,
+    'schoolAttendance.approve': true,
+    'schoolAttendance.lock': true,
+    'schoolAttendance.overrideLocked': true,
+    'classAttendance.view': true,
+    'classAttendance.create': true,
+    'classAttendance.edit': true,
+    'academicYears.view': true,
+    'academicYears.create': true,
+    'academicYears.edit': true,
+    'academicYears.close': true,
+    'academicYears.reopen': true,
+    'studentPromotion.view': true,
+    'studentPromotion.execute': true,
+    'studentPromotion.rollback': true,
+    'student360.view': true,
+    'student360.viewAttendance': true,
+    'student360.viewBehavior': true,
+    'student360.viewParentCommunication': true,
+    'student360.editNotes': true,
+    'teachers.view': true,
+    'teachers.create': true,
+    'teachers.edit': true,
+    'teachers.delete': true,
+    'teachers.import': true,
+    'teacherAttendance.view': true,
+    'teacherAttendance.create': true,
+    'teacherAttendance.edit': true,
+    'teacherAttendance.delete': true,
+    'leaves.view': true,
+    'leaves.create': true,
+    'leaves.edit': true,
+    'leaves.delete': true,
+    'behavior.view': true,
+    'behavior.create': true,
+    'behavior.edit': true,
+    'behavior.delete': true,
+    'behaviorCases.view': true,
+    'behaviorCases.create': true,
+    'behaviorCases.edit': true,
+    'behaviorCases.close': true,
+    'behaviorTypes.manage': true,
+    'behaviorPoints.manage': true,
+    'positiveBehavior.create': true,
+    'parentCommunication.view': true,
+    'parentCommunication.create': true,
+    'schedule.view': true,
+    'schedule.manage': true,
+    'schedule.publish': true,
+    'schedule.cancelLesson': true,
+    'schedule.exportPdf': true,
+    'schedule.manageSubstitution': true,
+    'schedule.viewConflicts': true,
+    'lessonContent.view': true,
+    'lessonContent.create': true,
+    'lessonContent.edit': true,
+    'lessonContent.editOwn': true,
+    'lessonContent.publish': true,
+    'lessonResources.manage': true,
+    'homework.create': true,
+    'homework.editOwn': true,
+    'homework.publish': true,
+    'parentPortal.access': false,
+    'settings.manage': true,
+    'users.manage': true,
+    'audit.view': true,
+    'reports.view': true,
+  },
+  TrainingOfficer: {
+    'teachers.view': true,
+    'teachers.create': false,
+    'teachers.edit': false,
+    'teachers.delete': false,
+    'teachers.import': false,
+    'teacherAttendance.view': true,
+    'leaves.view': true,
+    'reports.view': true,
+    'audit.view': false,
+  },
+  QualityOfficer: {
+    'students.view': true,
+    'teachers.view': true,
+    'studentAttendance.view': true,
+    'schoolAttendance.view': true,
+    'teacherAttendance.view': true,
+    'leaves.view': true,
+    'behavior.view': true,
+    'behaviorCases.view': true,
+    'reports.view': true,
+    'audit.view': true,
+  },
+  Student: {},
 };
 
 /**
@@ -1087,12 +1063,7 @@ export function hasPermission(
   customRoleMatrix?: Record<UserRole, Record<PermissionKey, boolean>>
 ): boolean {
   if (!user) return false;
-  if (user.role === 'Admin') return true;
-
-  // Payroll is strictly locked to Admin only
-  if (permission.startsWith('payroll.')) {
-    return false;
-  }
+  if (user.role === 'Admin' || user.role === 'SchoolDirector') return true;
 
   const matrix = customRoleMatrix || DEFAULT_ROLE_PERMISSIONS;
   const rolePerms = matrix[user.role];
@@ -1106,7 +1077,15 @@ export function hasPermission(
  */
 export function canAccessStudent(user: User | null, student: Student): boolean {
   if (!user) return false;
-  if (user.role === 'Admin' || user.role === 'StudentAffairs' || user.role === 'SocialSpecialist' || user.role === 'Supervisor') {
+  if (
+    user.role === 'Admin' ||
+    user.role === 'SchoolDirector' ||
+    user.role === 'StudentAffairs' ||
+    user.role === 'SocialSpecialist' ||
+    user.role === 'Supervisor' ||
+    user.role === 'BehaviorOfficer' ||
+    user.role === 'QualityOfficer'
+  ) {
     return true;
   }
   if (user.role === 'Parent') {
@@ -1124,7 +1103,7 @@ export function canAccessStudent(user: User | null, student: Student): boolean {
  */
 export function canParentAccessStudent(user: User | null, studentId: string): boolean {
   if (!user) return false;
-  if (user.role === 'Admin') return true;
+  if (user.role === 'Admin' || user.role === 'SchoolDirector') return true;
   if (user.role !== 'Parent') return false;
 
   if (user.studentIds && user.studentIds.includes(studentId)) {
@@ -1134,10 +1113,10 @@ export function canParentAccessStudent(user: User | null, studentId: string): bo
 }
 
 /**
- * Check if a user can access payroll features (ADMIN ONLY)
+ * Check if a user can access payroll features (ADMIN ONLY) - RETIRED
  */
-export function canAccessPayroll(user: User | null): boolean {
-  return user?.role === 'Admin';
+export function canAccessPayroll(_user: User | null): boolean {
+  return false;
 }
 
 /**
@@ -1151,7 +1130,12 @@ export function canTeacherAccessClass(
   subject?: string
 ): boolean {
   if (!user) return false;
-  if (user.role === 'Admin' || user.role === 'StudentAffairs' || user.role === 'Supervisor') {
+  if (
+    user.role === 'Admin' ||
+    user.role === 'SchoolDirector' ||
+    user.role === 'StudentAffairs' ||
+    user.role === 'Supervisor'
+  ) {
     return true;
   }
   if (user.role !== 'Teacher') {
@@ -1169,7 +1153,13 @@ export function canTeacherAccessClass(
  */
 export function canAccessClassroom(user: User | null, grade: string, classroom: string): boolean {
   if (!user) return false;
-  if (user.role === 'Admin' || user.role === 'StudentAffairs' || user.role === 'Supervisor' || user.role === 'SocialSpecialist') {
+  if (
+    user.role === 'Admin' ||
+    user.role === 'SchoolDirector' ||
+    user.role === 'StudentAffairs' ||
+    user.role === 'Supervisor' ||
+    user.role === 'SocialSpecialist'
+  ) {
     return true;
   }
   return true;
@@ -1183,11 +1173,14 @@ export function getDashboardForUser(user: User | null): string {
 
   switch (user.role) {
     case 'Admin':
+    case 'SchoolDirector':
+    case 'QualityOfficer':
       return 'AdminDashboard';
     case 'StudentAffairs':
       return 'StudentAffairsDashboard';
     case 'TeacherAffairs':
     case 'HR':
+    case 'TrainingOfficer':
       return 'TeacherAffairsDashboard';
     case 'Teacher':
       return 'TeacherDashboard';

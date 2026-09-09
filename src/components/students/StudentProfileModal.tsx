@@ -25,11 +25,10 @@ import {
   MessageSquare,
   Plus,
   Printer,
-  Sparkles,
   PhoneCall,
   ArrowRightLeft
 } from 'lucide-react';
-import { Student, ParentCommunicationLog, BehaviorScoreLedger, BehaviorViolation, CommunicationType } from '../../types';
+import { Student, ParentCommunicationLog, BehaviorScoreLedger, BehaviorViolation, CommunicationType, User as AppUser } from '../../types';
 import { storageService } from '../../services/storageService';
 import { formatEgyptianDate, getCairoNowISO } from '../../utils/egyptianTime';
 
@@ -38,6 +37,7 @@ interface StudentProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   onEdit?: (student: Student) => void;
+  currentUser?: AppUser | null;
 }
 
 type TabType = 'info' | 'attendance' | 'behavior' | 'parentComms' | 'transfers' | 'schedule';
@@ -47,9 +47,12 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   isOpen,
   onClose,
   onEdit,
+  currentUser,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('info');
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const activeUser = currentUser || storageService.getCurrentUser();
 
   // Quick action sub-modals
   const [isCommModalOpen, setIsCommModalOpen] = useState(false);
@@ -340,16 +343,18 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
           >
             القيود وحركات النقل ({enrollments.length + transfers.length})
           </button>
-          <button
-            onClick={() => setActiveTab('schedule')}
-            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'schedule'
-                ? 'border-[#008e8b] text-[#008e8b]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            الجدول الأسبوعي
-          </button>
+          {storageService.getSettings().schoolScheduleEnabled && (
+            <button
+              onClick={() => setActiveTab('schedule')}
+              className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                activeTab === 'schedule'
+                  ? 'border-[#008e8b] text-[#008e8b]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              الجدول الأسبوعي
+            </button>
+          )}
         </div>
 
         {/* Tab Content */}

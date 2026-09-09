@@ -24,7 +24,7 @@ import {
 import { Employee, EmployeePermissionRecord, LeaveRecord, LeaveStatus, LeaveType, SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
-import { HRPayrollService } from '../../services/hrPayrollService';
+import { HRPayrollService } from '../../services/hrService';
 import { MasterDataService } from '../../services/masterDataService';
 
 interface LeavesViewProps {

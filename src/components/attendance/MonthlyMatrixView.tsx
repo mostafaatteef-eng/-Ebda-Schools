@@ -28,7 +28,7 @@ import {
 } from '../../utils/attendanceUtils';
 import { ExportService } from '../../services/exportService';
 import { storageService } from '../../services/storageService';
-import { HRPayrollService } from '../../services/hrPayrollService';
+import { HRPayrollService } from '../../services/hrService';
 import { getCairoCurrentDate, formatEgyptianDate } from '../../utils/egyptianTime';
 
 interface MonthlyMatrixViewProps {

@@ -2,17 +2,20 @@ import { UserRole } from '../types';
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   Admin: 'مدير النظام',
+  SchoolDirector: 'مدير المدرسة',
   StudentAffairs: 'مسئول شئون الطلاب والقيد',
   TeacherAffairs: 'مسئول شئون المعلمين والعاملين',
-  Teacher: 'معلم',
   SocialSpecialist: 'أخصائي اجتماعي',
-  Parent: 'ولي أمر',
+  TrainingOfficer: 'مسئول التدريب والتوجيه المهني',
+  QualityOfficer: 'مسئول الجودة',
   HR: 'مسئول شئون المعلمين والعاملين',
   Supervisor: 'مشرف تربوي',
   BehaviorOfficer: 'مسؤول الانضباط المدرسي',
-  PayrollOfficer: 'محاسب الرواتب',
   Employee: 'موظف',
   Viewer: 'مستعرض (قراءة فقط)',
+  Teacher: 'معلم (سجل)',
+  Parent: 'ولي أمر (جهة اتصال)',
+  Student: 'طالب (سجل مدرسي)',
 };
 
 export const STATUS_LABELS: Record<string, string> = {
