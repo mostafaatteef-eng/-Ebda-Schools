@@ -26,7 +26,6 @@ import * as XLSX from 'xlsx';
 import { SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { AcademicStructureTab } from './AcademicStructureTab';
-import { ScheduleConfigTab } from './ScheduleConfigTab';
 import { AttendanceRulesTab } from './AttendanceRulesTab';
 import { BehaviorRulesTab } from './BehaviorRulesTab';
 import { StaffConfigTab } from './StaffConfigTab';
@@ -42,9 +41,7 @@ import {
   DEFAULT_JOB_TITLES,
   DEFAULT_LEAVE_TYPES,
   DEFAULT_PAYMENT_METHODS,
-  DEFAULT_PAYROLL_RULES,
   DEFAULT_PERMISSION_TYPES,
-  DEFAULT_SCHEDULE_CONFIG,
   DEFAULT_STAGES,
   DEFAULT_STUDENT_ATTENDANCE_RULES,
   DEFAULT_STUDENT_ATTENDANCE_STATUSES,
@@ -59,7 +56,6 @@ interface SettingsViewProps {
 export type TabKey =
   | 'general'
   | 'academic'
-  | 'schedule'
   | 'attendance'
   | 'behavior'
   | 'staff'
@@ -79,14 +75,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, currentUse
     feeCategories: settings.feeCategories || DEFAULT_FEE_CATEGORIES,
     installmentPlans: settings.installmentPlans || DEFAULT_INSTALLMENT_PLANS,
     paymentMethods: settings.paymentMethods || DEFAULT_PAYMENT_METHODS,
-    scheduleConfig: settings.scheduleConfig || DEFAULT_SCHEDULE_CONFIG,
     studentAttendanceStatuses: settings.studentAttendanceStatuses || DEFAULT_STUDENT_ATTENDANCE_STATUSES,
     studentAttendanceRules: settings.studentAttendanceRules || DEFAULT_STUDENT_ATTENDANCE_RULES,
     teacherAttendanceRules: settings.teacherAttendanceRules || DEFAULT_TEACHER_ATTENDANCE_RULES,
     behaviorScoreRules: settings.behaviorScoreRules || DEFAULT_BEHAVIOR_RULES,
     behaviorLevels: settings.behaviorLevels || DEFAULT_BEHAVIOR_LEVELS,
     alertRules: settings.alertRules || DEFAULT_ALERT_RULES,
-    payrollRules: settings.payrollRules || DEFAULT_PAYROLL_RULES,
     holidays: settings.holidays || DEFAULT_HOLIDAYS,
   });
 
@@ -131,7 +125,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, currentUse
     const leaves = storageService.getLeaves();
     const users = storageService.getUsers();
     const violations = storageService.getBehaviorViolations();
-    const schedule = storageService.getSchedule();
 
     const wb = XLSX.utils.book_new();
 
@@ -140,7 +133,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, currentUse
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(employees), 'الموظفون_والمعلمون');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(attendance), 'حضور_الموظفين');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(violations), 'سجل_السلوك_والمخالفات');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(schedule), 'الجدول_المدرسي');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(leaves), 'الإجازات');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(users), 'المستخدمون');
 
@@ -277,19 +269,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, currentUse
         >
           <GraduationCap className="w-4 h-4" />
           الهيكل الأكاديمي والصفوف
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('schedule')}
-          className={`px-3.5 py-2.5 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 ${
-            activeTab === 'schedule'
-              ? 'bg-[#008e8b] text-white shadow-xs'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-          الجدول والحصص والفسح
         </button>
 
         <button
@@ -454,12 +433,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, currentUse
           <AcademicStructureTab formData={formData} setFormData={setFormData} />
         )}
 
-        {/* TAB 3: Schedule Config */}
-        {activeTab === 'schedule' && (
-          <ScheduleConfigTab formData={formData} setFormData={setFormData} />
-        )}
-
-        {/* TAB 4: Attendance Rules */}
+        {/* TAB 3: Attendance Rules */}
         {activeTab === 'attendance' && (
           <AttendanceRulesTab formData={formData} setFormData={setFormData} />
         )}

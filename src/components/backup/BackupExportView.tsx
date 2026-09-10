@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { storageService } from '../../services/storageService';
 import { MasterDataService } from '../../services/masterDataService';
-import { HomeworkService } from '../../services/homeworkService';
 import { getCairoNowISO } from '../../utils/egyptianTime';
 
 export const BackupExportView: React.FC = () => {
@@ -24,9 +23,7 @@ export const BackupExportView: React.FC = () => {
   const employees = storageService.getEmployees();
   const attendance = storageService.getAttendance();
   const studentAttendance = storageService.getStudentAttendance();
-  const schedule = storageService.getSchedule();
   const behavior = storageService.getBehaviorViolations();
-  const homeworks = HomeworkService.getHomeworks();
   const masterData = MasterDataService.getMasterData();
 
   const handleCreateFullBackup = () => {
@@ -45,9 +42,7 @@ export const BackupExportView: React.FC = () => {
           employees,
           teacherAttendance: attendance,
           studentAttendance,
-          schedule,
           behaviorViolations: behavior,
-          homeworks,
           masterData,
           settings: storageService.getSettings(),
           academicYears: storageService.getAcademicYears(),
@@ -98,7 +93,7 @@ export const BackupExportView: React.FC = () => {
               <span>تصدير نسخة احتياطية متكاملة (Full System Snapshot)</span>
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed max-w-xl">
-              تشمل نسخة آمنة من سجلات الطلاب، الدوام، السلوك، الجدول، الواجبات، والقوائم المعتمدة. (لا يتم تضمين كلمات المرور لأسباب أمنية).
+              تشمل نسخة آمنة من سجلات الطلاب، الدوام، السلوك، المعلمين، والقوائم المعتمدة. (لا يتم تضمين كلمات المرور لأسباب أمنية).
             </p>
           </div>
 
@@ -134,8 +129,8 @@ export const BackupExportView: React.FC = () => {
             <div className="text-xs text-slate-500 font-bold mt-1">سجلات الحضور</div>
           </div>
           <div className="p-4 rounded-2xl bg-white border border-slate-200 text-center">
-            <div className="text-xl font-black text-[#008e8b]">{homeworks.length}</div>
-            <div className="text-xs text-slate-500 font-bold mt-1">الواجبات المدرسية</div>
+            <div className="text-xl font-black text-[#008e8b]">{behavior.length}</div>
+            <div className="text-xs text-slate-500 font-bold mt-1">سجلات السلوك</div>
           </div>
         </div>
       </div>

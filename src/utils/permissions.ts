@@ -1,6 +1,6 @@
-import { PermissionKey, Student, User, UserRole } from '../types';
+import { PermissionKey, Student, User, UserRole, LegacyUserRole } from '../types';
 
-export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
+export const ROLE_DISPLAY_NAMES: Record<LegacyUserRole, string> = {
   Admin: 'مدير النظام',
   SchoolDirector: 'مدير المدرسة',
   StudentAffairs: 'شئون الطلاب والقيد',
@@ -18,7 +18,7 @@ export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
   Student: 'طالب (سجل مدرسي - لا يوجد حساب)',
 };
 
-export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Partial<Record<PermissionKey, boolean>>> = {
+export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<PermissionKey, boolean>>> = {
   Admin: {
     'students.view': true,
     'students.create': true,
@@ -1077,21 +1077,22 @@ export function hasPermission(
  */
 export function canAccessStudent(user: User | null, student: Student): boolean {
   if (!user) return false;
+  const role = user.role as string;
   if (
-    user.role === 'Admin' ||
-    user.role === 'SchoolDirector' ||
-    user.role === 'StudentAffairs' ||
-    user.role === 'SocialSpecialist' ||
-    user.role === 'Supervisor' ||
-    user.role === 'BehaviorOfficer' ||
-    user.role === 'QualityOfficer'
+    role === 'Admin' ||
+    role === 'SchoolDirector' ||
+    role === 'StudentAffairs' ||
+    role === 'SocialSpecialist' ||
+    role === 'Supervisor' ||
+    role === 'BehaviorOfficer' ||
+    role === 'QualityOfficer'
   ) {
     return true;
   }
-  if (user.role === 'Parent') {
+  if (role === 'Parent') {
     return canParentAccessStudent(user, student.id);
   }
-  if (user.role === 'Teacher') {
+  if (role === 'Teacher') {
     // Teachers can access students in their assigned grades/classrooms
     return true;
   }
@@ -1104,7 +1105,7 @@ export function canAccessStudent(user: User | null, student: Student): boolean {
 export function canParentAccessStudent(user: User | null, studentId: string): boolean {
   if (!user) return false;
   if (user.role === 'Admin' || user.role === 'SchoolDirector') return true;
-  if (user.role !== 'Parent') return false;
+  if ((user.role as string) !== 'Parent') return false;
 
   if (user.studentIds && user.studentIds.includes(studentId)) {
     return true;
@@ -1130,15 +1131,16 @@ export function canTeacherAccessClass(
   subject?: string
 ): boolean {
   if (!user) return false;
+  const role = user.role as string;
   if (
-    user.role === 'Admin' ||
-    user.role === 'SchoolDirector' ||
-    user.role === 'StudentAffairs' ||
-    user.role === 'Supervisor'
+    role === 'Admin' ||
+    role === 'SchoolDirector' ||
+    role === 'StudentAffairs' ||
+    role === 'Supervisor'
   ) {
     return true;
   }
-  if (user.role !== 'Teacher') {
+  if (role !== 'Teacher') {
     return false;
   }
   if (user.employeeId && teacherId && user.employeeId === teacherId) {
@@ -1153,12 +1155,13 @@ export function canTeacherAccessClass(
  */
 export function canAccessClassroom(user: User | null, grade: string, classroom: string): boolean {
   if (!user) return false;
+  const role = user.role as string;
   if (
-    user.role === 'Admin' ||
-    user.role === 'SchoolDirector' ||
-    user.role === 'StudentAffairs' ||
-    user.role === 'Supervisor' ||
-    user.role === 'SocialSpecialist'
+    role === 'Admin' ||
+    role === 'SchoolDirector' ||
+    role === 'StudentAffairs' ||
+    role === 'Supervisor' ||
+    role === 'SocialSpecialist'
   ) {
     return true;
   }
@@ -1171,7 +1174,7 @@ export function canAccessClassroom(user: User | null, grade: string, classroom: 
 export function getDashboardForUser(user: User | null): string {
   if (!user) return 'AdminDashboard';
 
-  switch (user.role) {
+  switch (user.role as string) {
     case 'Admin':
     case 'SchoolDirector':
     case 'QualityOfficer':

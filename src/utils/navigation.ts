@@ -8,7 +8,7 @@ import { storageService } from '../services/storageService';
 export function resolveDefaultRouteForCurrentUser(user: User | null): string {
   if (!user) return 'dashboard';
 
-  switch (user.role) {
+  switch (user.role as string) {
     case 'Admin':
     case 'SchoolDirector':
       return 'dashboard';
@@ -29,9 +29,9 @@ export function resolveDefaultRouteForCurrentUser(user: User | null): string {
     case 'Viewer':
       return 'reports';
     case 'Teacher':
-      return 'teacher_portal';
+      return 'dashboard';
     case 'Parent':
-      return 'parent_day_view';
+      return 'dashboard';
     default:
       return 'dashboard';
   }
@@ -66,10 +66,10 @@ export function canAccessTab(user: User | null, tab: string): boolean {
   const settings = storageService.getSettings();
 
   // Hide Teacher Portal and Parent Portals if their accounts/features are disabled
-  if (tab === 'teacher_portal' && !settings.teacherAccountsEnabled && user.role !== 'Teacher') {
+  if (tab === 'teacher_portal' && !settings.teacherAccountsEnabled && (user.role as string) !== 'Teacher') {
     return false;
   }
-  if ((tab === 'parent_portal' || tab === 'parent_day_view') && !settings.parentAccountsEnabled && user.role !== 'Parent') {
+  if ((tab === 'parent_portal' || tab === 'parent_day_view') && !settings.parentAccountsEnabled && (user.role as string) !== 'Parent') {
     return false;
   }
 
@@ -92,12 +92,12 @@ export function canAccessTab(user: User | null, tab: string): boolean {
   }
 
   // 3. Parent Role Isolation (if enabled)
-  if (user.role === 'Parent') {
+  if ((user.role as string) === 'Parent') {
     return tab === 'parent_day_view' || tab === 'parent_portal';
   }
 
   // 4. Teacher Role Isolation (if enabled)
-  if (user.role === 'Teacher') {
+  if ((user.role as string) === 'Teacher') {
     return tab === 'teacher_portal';
   }
 
@@ -108,13 +108,13 @@ export function canAccessTab(user: User | null, tab: string): boolean {
   }
 
   // 6. Teacher Affairs / HR Role Isolation
-  if (user.role === 'TeacherAffairs' || user.role === 'HR') {
+  if (user.role === 'TeacherAffairs' || (user.role as string) === 'HR') {
     const allowed = ['employees', 'daily_attendance', 'monthly_matrix', 'leaves', 'reports'];
     return allowed.includes(tab);
   }
 
   // 7. Social Specialist Role Isolation
-  if (user.role === 'SocialSpecialist' || user.role === 'BehaviorOfficer') {
+  if (user.role === 'SocialSpecialist' || (user.role as string) === 'BehaviorOfficer') {
     const allowed = ['behavior', 'reports'];
     return allowed.includes(tab);
   }

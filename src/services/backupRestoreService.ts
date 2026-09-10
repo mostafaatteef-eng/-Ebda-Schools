@@ -74,9 +74,6 @@ export class BackupRestoreService {
     if (type === 'FULL' || type === 'ACADEMIC') {
       extractEntity('students', STORAGE_KEYS.STUDENTS);
       extractEntity('studentAttendance', STORAGE_KEYS.STUDENT_ATTENDANCE);
-      extractEntity('classAttendance', STORAGE_KEYS.CLASS_ATTENDANCE);
-      extractEntity('schedule', STORAGE_KEYS.SCHEDULE);
-      extractEntity('homeworks', STORAGE_KEYS.HOMEWORKS);
       extractEntity('behaviorViolations', STORAGE_KEYS.BEHAVIOR_VIOLATIONS);
       extractEntity('behaviorCases', STORAGE_KEYS.BEHAVIOR_CASES);
       extractEntity('behaviorLedger', STORAGE_KEYS.BEHAVIOR_LEDGER);
@@ -86,11 +83,6 @@ export class BackupRestoreService {
       extractEntity('employees', STORAGE_KEYS.EMPLOYEES);
       extractEntity('attendance', STORAGE_KEYS.ATTENDANCE);
       extractEntity('leaves', STORAGE_KEYS.LEAVES);
-    }
-
-    if (type === 'FULL' || type === 'PAYROLL') {
-      extractEntity('payroll', STORAGE_KEYS.PAYROLL);
-      extractEntity('payrollSnapshots', STORAGE_KEYS.PAYROLL_SNAPSHOTS);
     }
 
     if (type === 'FULL') {
@@ -230,17 +222,12 @@ export class BackupRestoreService {
     restoreEntity('masterData', STORAGE_KEYS.MASTER_DATA);
     restoreEntity('students', STORAGE_KEYS.STUDENTS);
     restoreEntity('studentAttendance', STORAGE_KEYS.STUDENT_ATTENDANCE);
-    restoreEntity('classAttendance', STORAGE_KEYS.CLASS_ATTENDANCE);
-    restoreEntity('schedule', STORAGE_KEYS.SCHEDULE);
-    restoreEntity('homeworks', STORAGE_KEYS.HOMEWORKS);
     restoreEntity('behaviorViolations', STORAGE_KEYS.BEHAVIOR_VIOLATIONS);
     restoreEntity('behaviorCases', STORAGE_KEYS.BEHAVIOR_CASES);
     restoreEntity('behaviorLedger', STORAGE_KEYS.BEHAVIOR_LEDGER);
     restoreEntity('employees', STORAGE_KEYS.EMPLOYEES);
     restoreEntity('attendance', STORAGE_KEYS.ATTENDANCE);
     restoreEntity('leaves', STORAGE_KEYS.LEAVES);
-    restoreEntity('payroll', STORAGE_KEYS.PAYROLL);
-    restoreEntity('payrollSnapshots', STORAGE_KEYS.PAYROLL_SNAPSHOTS);
 
     // Lockout Protection: Ensure at least one active Admin user exists
     const users = storageService.getUsers();

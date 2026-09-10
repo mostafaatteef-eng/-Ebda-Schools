@@ -52,9 +52,10 @@ import {
   TeacherPortalSettings,
   User,
   UserRole,
+  LegacyUserRole,
 } from '../types';
 
-export const DEFAULT_PERMISSION_MATRIX: Record<UserRole, PermissionMatrix> = {
+export const DEFAULT_PERMISSION_MATRIX: Record<LegacyUserRole, PermissionMatrix> = {
   Admin: {
     canViewStudents: true,
     canEditStudents: true,
@@ -931,9 +932,7 @@ export const INITIAL_SETTINGS: SystemSettings = {
   promotionRules: DEFAULT_PROMOTION_RULES,
   positiveBehaviorTypes: DEFAULT_POSITIVE_BEHAVIOR_TYPES,
   locations: DEFAULT_LOCATIONS,
-  conflictRules: DEFAULT_CONFLICT_RULES,
   
-  scheduleConfig: DEFAULT_SCHEDULE_CONFIG,
   studentAttendanceStatuses: DEFAULT_STUDENT_ATTENDANCE_STATUSES,
   studentAttendanceRules: DEFAULT_STUDENT_ATTENDANCE_RULES,
   teacherAttendanceRules: DEFAULT_TEACHER_ATTENDANCE_RULES,
@@ -944,15 +943,12 @@ export const INITIAL_SETTINGS: SystemSettings = {
   leaveTypes: DEFAULT_LEAVE_TYPES,
   permissionTypes: DEFAULT_PERMISSION_TYPES,
   
-  payrollRules: DEFAULT_PAYROLL_RULES,
   allowanceTypes: DEFAULT_ALLOWANCE_TYPES,
   deductionTypes: DEFAULT_DEDUCTION_TYPES,
   feeCategories: DEFAULT_FEE_CATEGORIES,
   installmentPlans: DEFAULT_INSTALLMENT_PLANS,
   paymentMethods: DEFAULT_PAYMENT_METHODS,
   
-  parentPortalSettings: DEFAULT_PARENT_PORTAL_SETTINGS,
-  teacherPortalSettings: DEFAULT_TEACHER_PORTAL_SETTINGS,
   socialSpecialistSettings: DEFAULT_SOCIAL_SPECIALIST_SETTINGS,
   
   importSettings: DEFAULT_IMPORT_SETTINGS,

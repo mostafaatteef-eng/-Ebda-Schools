@@ -2,14 +2,12 @@ import {
   AttendanceRecord,
   Employee,
   LeaveRecord,
-  PayrollRecord,
   Student,
   StudentAttendanceRecord,
   SystemSettings,
   User,
 } from '../types';
 import {
-  PayrollAttendanceSnapshot,
   ReportColumn,
   ReportDefinition,
   ReportFilterDef,
@@ -168,153 +166,9 @@ export class ReportService {
       defaultSort: { column: 'lateCount', direction: 'desc' },
       isActive: true,
     },
-    {
-      id: 'REP-STU-06',
-      key: 'class_attendance_report',
-      name: 'حضور الحصص الأكاديمية (Class Attendance)',
-      module: 'STUDENTS',
-      description: 'حضور الحصص المسجل بواسطة معلمي المواد خلال اليوم الدراسي',
-      requiredPermission: 'classAttendance.view',
-      availableFilters: [
-        { key: 'date', label: 'التاريخ', type: 'date', defaultValue: getCairoCurrentDate() },
-        { key: 'subject', label: 'المادة', type: 'select', defaultValue: 'ALL' },
-        { key: 'classroom', label: 'الفصل', type: 'select', defaultValue: 'ALL' },
-      ],
-      availableColumns: [
-        { key: 'index', label: 'م', isDefaultVisible: true, align: 'center' },
-        { key: 'date', label: 'التاريخ', isDefaultVisible: true, align: 'center' },
-        { key: 'periodNumber', label: 'الحصة', isDefaultVisible: true, align: 'center' },
-        { key: 'classroom', label: 'الفصل', isDefaultVisible: true, align: 'center' },
-        { key: 'subject', label: 'المادة', isDefaultVisible: true },
-        { key: 'teacherName', label: 'المعلم الراصد', isDefaultVisible: true },
-        { key: 'studentName', label: 'اسم الطالب', isDefaultVisible: true },
-        { key: 'status', label: 'حالة الحضور', isDefaultVisible: true, align: 'center' },
-      ],
-      exportFormats: ['EXCEL', 'PDF', 'PRINT'],
-      isActive: true,
-    },
-    {
-      id: 'REP-STU-07',
-      key: 'student_attendance_exceptions',
-      name: 'تقرير فروق وتناقضات الحضور (Attendance Exceptions)',
-      module: 'STUDENTS',
-      description: 'كشف التناقضات بين طابور الصباح وحصص الفصول (حاضر مدرسة / غائب حصة والعكس)',
-      requiredPermission: 'studentAttendance.view',
-      availableFilters: [
-        { key: 'date', label: 'التاريخ', type: 'date', defaultValue: getCairoCurrentDate() },
-      ],
-      availableColumns: [
-        { key: 'index', label: 'م', isDefaultVisible: true, align: 'center' },
-        { key: 'studentCode', label: 'كود الطالب', isDefaultVisible: true, align: 'center' },
-        { key: 'studentName', label: 'اسم الطالب', isDefaultVisible: true },
-        { key: 'grade', label: 'الصف', isDefaultVisible: true, align: 'center' },
-        { key: 'classroom', label: 'الفصل', isDefaultVisible: true, align: 'center' },
-        { key: 'schoolStatus', label: 'دوام المدرسة العام', isDefaultVisible: true, align: 'center' },
-        { key: 'classStatus', label: 'حالة الحصة المسجلة', isDefaultVisible: true, align: 'center' },
-        { key: 'discrepancyType', label: 'نوع التناقض', isDefaultVisible: true, align: 'center' },
-      ],
-      exportFormats: ['EXCEL', 'PDF', 'PRINT'],
-      isActive: true,
-    },
 
     /* =========================================================================
-     * 2. التقارير الأكاديمية والجدول والواجبات (Academic Reports)
-     * ========================================================================= */
-    {
-      id: 'REP-ACAD-01',
-      key: 'schedule_by_classroom',
-      name: 'الجدول الدراسي حسب الفصول',
-      module: 'ACADEMIC',
-      description: 'توزيع الحصص والمواد الأسبوعية لكل فصل دراسي',
-      requiredPermission: 'schedule.view',
-      availableFilters: [
-        { key: 'classroom', label: 'الفصل', type: 'select', defaultValue: 'ALL' },
-        { key: 'dayOfWeek', label: 'اليوم', type: 'select', defaultValue: 'ALL' },
-      ],
-      availableColumns: [
-        { key: 'index', label: 'م', isDefaultVisible: true, align: 'center' },
-        { key: 'classroom', label: 'الفصل', isDefaultVisible: true, align: 'center' },
-        { key: 'dayOfWeek', label: 'اليوم', isDefaultVisible: true, align: 'center' },
-        { key: 'periodNumber', label: 'الحصة', isDefaultVisible: true, align: 'center' },
-        { key: 'subject', label: 'المادة الدراسية', isDefaultVisible: true },
-        { key: 'teacherName', label: 'المعلم المسند', isDefaultVisible: true },
-        { key: 'room', label: 'القاعة / المعمل', isDefaultVisible: true, align: 'center' },
-      ],
-      exportFormats: ['EXCEL', 'PDF', 'PRINT'],
-      isActive: true,
-    },
-    {
-      id: 'REP-ACAD-02',
-      key: 'schedule_by_teacher',
-      name: 'نصاب وجدول المعلمين الأسبوعي',
-      module: 'ACADEMIC',
-      description: 'حصر حصص وجدول كل معلم وتوزيع الأيام والقاعات',
-      requiredPermission: 'schedule.view',
-      availableFilters: [
-        { key: 'teacherName', label: 'المعلم', type: 'select', defaultValue: 'ALL' },
-      ],
-      availableColumns: [
-        { key: 'index', label: 'م', isDefaultVisible: true, align: 'center' },
-        { key: 'teacherName', label: 'اسم المعلم', isDefaultVisible: true },
-        { key: 'dayOfWeek', label: 'اليوم', isDefaultVisible: true, align: 'center' },
-        { key: 'periodNumber', label: 'الحصة', isDefaultVisible: true, align: 'center' },
-        { key: 'classroom', label: 'الفصل', isDefaultVisible: true, align: 'center' },
-        { key: 'subject', label: 'المادة', isDefaultVisible: true },
-      ],
-      exportFormats: ['EXCEL', 'PDF', 'PRINT'],
-      isActive: true,
-    },
-    {
-      id: 'REP-ACAD-03',
-      key: 'lessons_execution_report',
-      name: 'تنفيذ الحصص وحصص الاحتياط',
-      module: 'ACADEMIC',
-      description: 'متابعة الحصص المنفذة، التي لم ترصد، الملغاة، وحصص الاحتياط والبدائل',
-      requiredPermission: 'schedule.view',
-      availableFilters: [
-        { key: 'date', label: 'التاريخ', type: 'date', defaultValue: getCairoCurrentDate() },
-        { key: 'executionStatus', label: 'حالة الحصة', type: 'select', defaultValue: 'ALL', options: [{ value: 'ALL', label: 'الكل' }, { value: 'منفذة', label: 'منفذة ومرصودة' }, { value: 'لم_ترصد', label: 'لم تسجل بعد' }, { value: 'ملغاة', label: 'ملغاة' }, { value: 'احتياط', label: 'حصة احتياط وبديل' }] },
-      ],
-      availableColumns: [
-        { key: 'index', label: 'م', isDefaultVisible: true, align: 'center' },
-        { key: 'date', label: 'التاريخ', isDefaultVisible: true, align: 'center' },
-        { key: 'periodNumber', label: 'الحصة', isDefaultVisible: true, align: 'center' },
-        { key: 'classroom', label: 'الفصل', isDefaultVisible: true, align: 'center' },
-        { key: 'subject', label: 'المادة', isDefaultVisible: true },
-        { key: 'teacherName', label: 'المعلم الأساسي', isDefaultVisible: true },
-        { key: 'substituteTeacher', label: 'معلم الاحتياط', isDefaultVisible: true },
-        { key: 'executionStatus', label: 'الحالة التنفيذية', isDefaultVisible: true, align: 'center' },
-      ],
-      exportFormats: ['EXCEL', 'PDF', 'PRINT'],
-      isActive: true,
-    },
-    {
-      id: 'REP-ACAD-04',
-      key: 'homework_monitoring_report',
-      name: 'متابعة الواجبات المدرسية المنشورة',
-      module: 'ACADEMIC',
-      description: 'رصد الواجبات المدرسية المرفوعة للطلاب حسب المادة والفصل وتاريخ التسليم',
-      requiredPermission: 'schedule.view',
-      availableFilters: [
-        { key: 'subject', label: 'المادة', type: 'select', defaultValue: 'ALL' },
-        { key: 'classroom', label: 'الفصل', type: 'select', defaultValue: 'ALL' },
-      ],
-      availableColumns: [
-        { key: 'index', label: 'م', isDefaultVisible: true, align: 'center' },
-        { key: 'title', label: 'عنوان الواجب', isDefaultVisible: true },
-        { key: 'subject', label: 'المادة', isDefaultVisible: true },
-        { key: 'classroom', label: 'الفصل المستهدف', isDefaultVisible: true, align: 'center' },
-        { key: 'teacherName', label: 'المعلم الناشر', isDefaultVisible: true },
-        { key: 'assignedDate', label: 'تاريخ النشر', isDefaultVisible: true, align: 'center' },
-        { key: 'dueDate', label: 'موعد التسليم', isDefaultVisible: true, align: 'center' },
-        { key: 'status', label: 'الحالة', isDefaultVisible: true, align: 'center' },
-      ],
-      exportFormats: ['EXCEL', 'PDF', 'PRINT'],
-      isActive: true,
-    },
-
-    /* =========================================================================
-     * 3. تقارير الانضباط والسلوك والتربية الاجتماعية (Behavior Reports)
+     * 2. تقارير الانضباط والسلوك والتربية الاجتماعية (Behavior Reports)
      * ========================================================================= */
     {
       id: 'REP-BEH-01',
@@ -515,8 +369,8 @@ export class ReportService {
     }
 
     // Role Security Enforcement
-    if (reportDef.adminOnly && !this.requirePayrollAdmin(currentUser)) {
-      throw new Error('403 Forbidden: هذا التقرير مالي سري ومقتصر فقط على الإدارة العليا.');
+    if (reportDef.adminOnly && currentUser?.role !== 'Admin') {
+      throw new Error('403 Forbidden: هذا التقرير مقتصر فقط على مدير النظام.');
     }
 
     // Fetch and filter raw records
@@ -724,132 +578,6 @@ export class ReportService {
             };
           })
           .filter(r => r.lateCount > 0);
-      }
-
-      case 'class_attendance_report': {
-        const classAttendance = storageService.getClassAttendance();
-        const date = filters.date || getCairoCurrentDate();
-        return classAttendance
-          .filter(c => {
-            const matchDate = c.date === date;
-            const matchSubject = !filters.subject || filters.subject === 'ALL' || c.subject === filters.subject;
-            const matchClass = !filters.classroom || filters.classroom === 'ALL' || c.classroom === filters.classroom;
-            return matchDate && matchSubject && matchClass;
-          })
-          .map(c => ({
-            date: c.date,
-            periodNumber: c.periodNumber,
-            classroom: c.classroom,
-            subject: c.subject,
-            teacherName: c.teacherName,
-            studentName: c.studentName,
-            status: c.status,
-          }));
-      }
-
-      case 'student_attendance_exceptions': {
-        const date = filters.date || getCairoCurrentDate();
-        const schoolAtt = storageService.getStudentAttendance().filter(a => a.date === date);
-        const classAtt = storageService.getClassAttendance().filter(a => a.date === date);
-
-        const exceptions: Record<string, any>[] = [];
-        schoolAtt.forEach(sAtt => {
-          const cRecords = classAtt.filter(c => c.studentId === sAtt.studentId);
-          if (cRecords.length > 0) {
-            const hasClassAbsent = cRecords.some(c => c.status === 'غائب');
-            if (sAtt.status === 'حاضر' && hasClassAbsent) {
-              exceptions.push({
-                studentCode: sAtt.studentCode,
-                studentName: sAtt.studentName,
-                grade: sAtt.grade,
-                classroom: sAtt.classroom,
-                schoolStatus: 'حاضر طابور / مدرسة',
-                classStatus: 'غائب داخل الحصة',
-                discrepancyType: 'تسرب من الحصة الأكاديمية',
-              });
-            } else if (sAtt.status === 'غائب' && cRecords.some(c => c.status === 'حاضر')) {
-              exceptions.push({
-                studentCode: sAtt.studentCode,
-                studentName: sAtt.studentName,
-                grade: sAtt.grade,
-                classroom: sAtt.classroom,
-                schoolStatus: 'غائب بالمدرسة',
-                classStatus: 'حاضر بالحصة',
-                discrepancyType: 'حضور متأخر بدون تسجيل مدرسة',
-              });
-            }
-          }
-        });
-        return exceptions;
-      }
-
-      case 'schedule_by_classroom': {
-        const schedule = storageService.getSchedule();
-        return schedule
-          .filter(s => {
-            const matchClass = !filters.classroom || filters.classroom === 'ALL' || s.classroom === filters.classroom;
-            const matchDay = !filters.dayOfWeek || filters.dayOfWeek === 'ALL' || s.dayOfWeek === filters.dayOfWeek;
-            return matchClass && matchDay;
-          })
-          .map(s => ({
-            classroom: s.classroom,
-            dayOfWeek: s.dayOfWeek,
-            periodNumber: s.periodNumber,
-            subject: s.subject,
-            teacherName: s.teacherName,
-            room: s.room || 'فصل أساسي',
-          }));
-      }
-
-      case 'schedule_by_teacher': {
-        const schedule = storageService.getSchedule();
-        return schedule
-          .filter(s => {
-            return !filters.teacherName || filters.teacherName === 'ALL' || s.teacherName === filters.teacherName;
-          })
-          .map(s => ({
-            teacherName: s.teacherName,
-            dayOfWeek: s.dayOfWeek,
-            periodNumber: s.periodNumber,
-            classroom: s.classroom,
-            subject: s.subject,
-          }));
-      }
-
-      case 'lessons_execution_report': {
-        const schedule = storageService.getSchedule();
-        const date = filters.date || getCairoCurrentDate();
-        const dayName = new Date(date).toLocaleDateString('ar-EG', { weekday: 'long' });
-        const daySchedule = schedule.filter(s => s.dayOfWeek.includes(dayName) || dayName.includes(s.dayOfWeek));
-
-        return daySchedule.map(s => ({
-          date,
-          periodNumber: s.periodNumber,
-          classroom: s.classroom,
-          subject: s.subject,
-          teacherName: s.teacherName,
-          substituteTeacher: s.isSubstituted ? s.substituteTeacherName || 'احتياط' : '-',
-          executionStatus: s.isCancelled ? 'ملغاة' : s.isSubstituted ? 'احتياط' : 'منفذة',
-        }));
-      }
-
-      case 'homework_monitoring_report': {
-        const homeworks = JSON.parse(localStorage.getItem(STORAGE_KEYS.HOMEWORKS) || '[]');
-        return homeworks
-          .filter((h: any) => {
-            const matchSub = !filters.subject || filters.subject === 'ALL' || h.subject === filters.subject;
-            const matchCls = !filters.classroom || filters.classroom === 'ALL' || h.classroom === filters.classroom;
-            return matchSub && matchCls;
-          })
-          .map((h: any) => ({
-            title: h.title,
-            subject: h.subject,
-            classroom: h.classroom,
-            teacherName: h.teacherName,
-            assignedDate: h.assignedDate,
-            dueDate: h.dueDate,
-            status: h.status === 'Published' ? 'منشور للطلاب' : 'مسودة',
-          }));
       }
 
       case 'violations_analysis': {
@@ -1079,7 +807,7 @@ export class ReportService {
     if (!reportDef) return;
 
     // Security check
-    if (reportDef.adminOnly && !this.requirePayrollAdmin(currentUser)) {
+    if (reportDef.adminOnly && currentUser?.role !== 'Admin') {
       alert('غير مصرح بتصدير هذا التقرير');
       return;
     }
@@ -1116,7 +844,7 @@ export class ReportService {
     const reportDef = this.REPORT_DEFINITIONS.find(r => r.key === reportKey);
     if (!reportDef) return;
 
-    if (reportDef.adminOnly && !this.requirePayrollAdmin(currentUser)) {
+    if (reportDef.adminOnly && currentUser?.role !== 'Admin') {
       alert('غير مصرح بتصدير هذا التقرير');
       return;
     }
@@ -1152,7 +880,7 @@ export class ReportService {
     const reportDef = this.REPORT_DEFINITIONS.find(r => r.key === reportKey);
     if (!reportDef) return;
 
-    if (reportDef.adminOnly && !this.requirePayrollAdmin(currentUser)) {
+    if (reportDef.adminOnly && currentUser?.role !== 'Admin') {
       alert('غير مصرح بطباعة هذا التقرير');
       return;
     }

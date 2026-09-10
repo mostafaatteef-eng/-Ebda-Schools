@@ -21,8 +21,6 @@ export class SystemHealthService {
     const employees = storageService.getEmployees();
     const studentAttendance = storageService.getStudentAttendance();
     const employeeAttendance = storageService.getAttendance();
-    const classAttendance = storageService.getClassAttendance();
-    const schedule = storageService.getSchedule();
     const violations = storageService.getBehaviorViolations();
     const syncStatus = storageService.getSyncStatus();
     const settings = storageService.getSettings();
@@ -54,8 +52,6 @@ export class SystemHealthService {
       'Leaves',
       'Students',
       'Student_Attendance',
-      'Class_Attendance',
-      'Schedule',
       'Settings',
       'Audit_Log',
       'Behavior_Violations',
@@ -147,23 +143,6 @@ export class SystemHealthService {
       });
     }
 
-    // D. Schedule with missing teacher
-    const employeeNames = new Set(employees.map(e => e.name));
-    const brokenSchedule = schedule.filter(s => !employeeNames.has(s.teacherName));
-    if (brokenSchedule.length > 0) {
-      integrityViolations.push({
-        checkType: 'SCHEDULE_MISSING_TEACHER',
-        title: 'حصص مسندة لمعلمين غير مسجلين',
-        severity: 'WARNING',
-        count: brokenSchedule.length,
-        sampleItems: brokenSchedule.slice(0, 5).map(s => ({
-          id: s.id,
-          label: `${s.subject} - ${s.classroom}`,
-          issue: `المعلم (${s.teacherName}) غير مسجل في شؤون المعلمين`,
-        })),
-      });
-    }
-
     // Integrity Check Summary item
     checks.push({
       id: 'CHK-INT-01',
@@ -233,7 +212,6 @@ export class SystemHealthService {
         employees: employees.length,
         studentAttendanceRows: studentAttendance.length,
         employeeAttendanceRows: employeeAttendance.length,
-        classAttendanceRows: classAttendance.length,
         violations: violations.length,
         notifications: notifications.length,
         auditLogs: auditLogs.length,

@@ -20,9 +20,6 @@ import { DashboardView } from './components/dashboard/DashboardView';
 import { StudentsView } from './components/students/StudentsView';
 import { StudentAttendanceView } from './components/students/StudentAttendanceView';
 import { BehaviorView } from './components/behavior/BehaviorView';
-import { TeacherPortalView } from './components/schedule/TeacherPortalView';
-import { ParentPortalView } from './components/parent/ParentPortalView';
-import { ParentDayView } from './components/parent/ParentDayView';
 import { DailyAttendanceView } from './components/attendance/DailyAttendanceView';
 import { MonthlyMatrixView } from './components/attendance/MonthlyMatrixView';
 import { AnnualSummaryView } from './components/summary/AnnualSummaryView';
@@ -40,6 +37,7 @@ import { OperationsCenterView } from './components/operations/OperationsCenterVi
 import { LoginView } from './components/auth/LoginView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
 import { runMigrationScope008RemoveSamatPayroll } from './services/migrationScope008RemoveSamatPayroll';
+import { runMigrationScope009SecurityAndFinalRetirement } from './services/migrationScope009SecurityAndFinalRetirement';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
@@ -58,9 +56,10 @@ export default function App() {
   const [selectedReportKey, setSelectedReportKey] = useState<string | undefined>();
   const [selectedReportFilters, setSelectedReportFilters] = useState<Record<string, any> | undefined>();
 
-  // Run scope reduction migration on boot (archives SAMAT and Payroll data safely)
+  // Run scope reduction and final retirement migration on boot
   useEffect(() => {
     runMigrationScope008RemoveSamatPayroll();
+    runMigrationScope009SecurityAndFinalRetirement();
   }, []);
 
   // Subscribe to storage changes
@@ -155,20 +154,6 @@ export default function App() {
 
       case 'behavior':
         return <BehaviorView />;
-
-      case 'teacher_portal':
-        return <TeacherPortalView />;
-
-      case 'parent_day_view':
-        return (
-          <ParentDayView
-            currentUser={currentUser}
-            onNavigateToFullPortal={() => setActiveTab('parent_portal')}
-          />
-        );
-
-      case 'parent_portal':
-        return <ParentPortalView currentUser={currentUser} />;
 
       case 'daily_attendance':
         return (

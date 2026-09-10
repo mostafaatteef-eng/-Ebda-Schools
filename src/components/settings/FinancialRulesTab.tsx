@@ -18,14 +18,12 @@ import {
   FeeCategoryItem,
   PaymentInstallmentPlan,
   PaymentMethodConfig,
-  PayrollRulesConfig,
   SystemSettings,
 } from '../../types';
 import {
   DEFAULT_FEE_CATEGORIES,
   DEFAULT_INSTALLMENT_PLANS,
   DEFAULT_PAYMENT_METHODS,
-  DEFAULT_PAYROLL_RULES,
 } from '../../data/initialData';
 import { storageService } from '../../services/storageService';
 
@@ -36,7 +34,7 @@ interface FinancialRulesTabProps {
 }
 
 export const FinancialRulesTab: React.FC<FinancialRulesTabProps> = ({ formData, setFormData, userRole }) => {
-  const [subSection, setSubSection] = useState<'fee_categories' | 'installment_plans' | 'payment_methods' | 'payroll_rules'>('fee_categories');
+  const [subSection, setSubSection] = useState<'fee_categories' | 'installment_plans' | 'payment_methods'>('fee_categories');
 
   // Fee Category Modal
   const [isFeeModalOpen, setIsFeeModalOpen] = useState(false);
@@ -71,7 +69,6 @@ export const FinancialRulesTab: React.FC<FinancialRulesTabProps> = ({ formData, 
   const feeCategories = formData.feeCategories || DEFAULT_FEE_CATEGORIES;
   const installmentPlans = formData.installmentPlans || DEFAULT_INSTALLMENT_PLANS;
   const paymentMethods = formData.paymentMethods || DEFAULT_PAYMENT_METHODS;
-  const payrollRules = formData.payrollRules || DEFAULT_PAYROLL_RULES;
 
   // ---------------- Fee Handlers ----------------
   const handleOpenAddFee = () => {
@@ -224,19 +221,6 @@ export const FinancialRulesTab: React.FC<FinancialRulesTabProps> = ({ formData, 
             <CreditCard className="w-4 h-4" />
             طرق وقنوات السداد ({paymentMethods.length})
           </button>
-
-          <button
-            type="button"
-            onClick={() => setSubSection('payroll_rules')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
-              subSection === 'payroll_rules'
-                ? 'bg-teal-600 text-white shadow'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-            }`}
-          >
-            <Wallet className="w-4 h-4" />
-            قواعد الرواتب والأجور
-          </button>
         </div>
 
         <button
@@ -246,7 +230,6 @@ export const FinancialRulesTab: React.FC<FinancialRulesTabProps> = ({ formData, 
               storageService.resetSettingsSection('feeCategories');
               storageService.resetSettingsSection('installmentPlans');
               storageService.resetSettingsSection('paymentMethods');
-              storageService.resetSettingsSection('payrollRules');
               setFormData(storageService.getSettings());
               showNotif('تمت استعادة الإعدادات المالية الافتراضية بنجاح');
             }
@@ -449,85 +432,6 @@ export const FinancialRulesTab: React.FC<FinancialRulesTabProps> = ({ formData, 
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* ---------------- Sub-Section: Payroll Rules ---------------- */}
-      {subSection === 'payroll_rules' && (
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
-          <div className="pb-4 border-b border-slate-100 dark:border-slate-700">
-            <h3 className="font-bold text-slate-800 dark:text-white text-base flex items-center gap-2">
-              <Wallet className="w-5 h-5 text-teal-600" />
-              قواعد احتساب الرواتب والبدلات والاستقطاعات
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">تحديد يوم صرف الرواتب، معاملات الخصم والإضافي، والضرائب</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                يوم صرف الرواتب شهرياً
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={31}
-                value={payrollRules.salaryDisbursementDay || 28}
-                onChange={e =>
-                  setFormData(prev => ({
-                    ...prev,
-                    payrollRules: {
-                      ...payrollRules,
-                      salaryDisbursementDay: parseInt(e.target.value, 10) || 28,
-                    },
-                  }))
-                }
-                className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                معامل احتساب الساعة الإضافية
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                value={payrollRules.overtimeHourRateMultiplier || 1.5}
-                onChange={e =>
-                  setFormData(prev => ({
-                    ...prev,
-                    payrollRules: {
-                      ...payrollRules,
-                      overtimeHourRateMultiplier: parseFloat(e.target.value) || 1.5,
-                    },
-                  }))
-                }
-                className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                نسبة التأمينات الاجتماعية (%)
-              </label>
-              <input
-                type="number"
-                step="0.5"
-                value={payrollRules.socialInsurancePercentage || 11}
-                onChange={e =>
-                  setFormData(prev => ({
-                    ...prev,
-                    payrollRules: {
-                      ...payrollRules,
-                      socialInsurancePercentage: parseFloat(e.target.value) || 0,
-                    },
-                  }))
-                }
-                className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-              />
-            </div>
           </div>
         </div>
       )}

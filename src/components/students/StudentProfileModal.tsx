@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Star,
+  Sparkles,
   User,
   Users,
   X,

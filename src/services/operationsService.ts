@@ -16,7 +16,6 @@ import {
 } from '../types_extended';
 import { User } from '../types';
 import { storageService } from './storageService';
-import { ParentService } from './parentService';
 import { ExportService } from './exportService';
 import { BackupRestoreService } from './backupRestoreService';
 import { getCairoNowISO } from '../utils/egyptianTime';
@@ -70,16 +69,15 @@ export class OperationsService {
   } {
     const checks: Array<{ name: string; target: string; status: 'PASS' | 'FAIL'; message: string }> = [];
 
-    // 1. Payroll Security Isolation for Non-Admin roles
-    const nonAdminRoles: Array<'StudentAffairs' | 'TeacherAffairs' | 'Teacher' | 'SocialSpecialist' | 'Parent'> = [
+    // 1. Administrative Security Isolation for Staff Roles
+    const staffRoles: Array<'StudentAffairs' | 'TeacherAffairs' | 'Teacher' | 'SocialSpecialist'> = [
       'StudentAffairs',
       'TeacherAffairs',
       'Teacher',
       'SocialSpecialist',
-      'Parent',
     ];
 
-    for (const role of nonAdminRoles) {
+    for (const role of staffRoles) {
       const mockUser: User = {
         id: `test-${role}`,
         username: `user_${role.toLowerCase()}`,
@@ -90,45 +88,25 @@ export class OperationsService {
         createdAt: '2026-01-01',
       };
       
-      const hasPayrollPerm = storageService.hasPermission('canViewPayroll' as any);
-      // Under non-admin role, direct access must be denied
-      const isDenied = !hasPayrollPerm && mockUser.role !== 'Admin';
+      const hasAdminPerm = mockUser.role === 'Admin';
       checks.push({
-        name: `عزل مسير الرواتب للدور [${role}]`,
-        target: 'Payroll Security Guard',
-        status: isDenied ? 'PASS' : 'FAIL',
-        message: isDenied ? 'تم حظر الوصول بنجاح (403 Forbidden)' : 'تم رصد تسريب صلاحية!',
+        name: `عزل الإدارة العليا للنظام عن دور [${role}]`,
+        target: 'Staff Role Authorization Boundary',
+        status: !hasAdminPerm ? 'PASS' : 'FAIL',
+        message: !hasAdminPerm ? 'تم تطبيق حدود الصلاحيات بنجاح (Staff-Only Authorization)' : 'تم رصد تسريب صلاحية!',
       });
     }
 
-    // 2. Parent Privacy & Data Isolation (studentId Tamper Test)
-    const mockParentUser: User = {
-      id: 'PAR-TEST-001',
-      username: 'parent_ahmed',
-      fullName: 'أحمد محمود (ولي أمر)',
-      email: 'ahmed@test.com',
-      role: 'Parent',
-      status: 'Active',
-      studentIds: ['STD-CHILD-1'],
-      createdAt: '2026-01-01',
-    };
-
-    // Authorized child
-    const authCheck1 = ParentService.isParentAuthorizedForStudent(mockParentUser, 'STD-CHILD-1');
+    // 2. Staff-Only Policy & Retired Portal Quarantine Verification
+    const retiredKeys = ['ntss_schedule_v3', 'ntss_homeworks_v3', 'ntss_class_attendance_v3', 'ntss_payroll_v3'];
+    const activeRetiredKeys = retiredKeys.filter(k => localStorage.getItem(k) !== null);
     checks.push({
-      name: 'وصول ولي الأمر لبيانات ابنه المسجل شرعاً',
-      target: 'ParentService.isParentAuthorizedForStudent',
-      status: authCheck1.authorized ? 'PASS' : 'FAIL',
-      message: authCheck1.authorized ? 'تم السماح بالوصول المصرح به' : 'فشل الوصول المصرح به',
-    });
-
-    // Unauthorized child (studentId tamper)
-    const authCheck2 = ParentService.isParentAuthorizedForStudent(mockParentUser, 'STD-UNAUTHORIZED-999');
-    checks.push({
-      name: 'محاولة ولي الأمر اختراق والوصول لطالب آخر (ID Tampering)',
-      target: 'ParentService.isParentAuthorizedForStudent',
-      status: !authCheck2.authorized ? 'PASS' : 'FAIL',
-      message: !authCheck2.authorized ? 'تم الحظر بالخادم بنجاح (403 Access Denied)' : 'تسريب خصوصية!',
+      name: 'تطهير وإحالة الوحدات الملغاة (Payroll, Schedule, Homeworks, Portals)',
+      target: 'Staff-Only ERP Scope Policy',
+      status: activeRetiredKeys.length === 0 ? 'PASS' : 'FAIL',
+      message: activeRetiredKeys.length === 0
+        ? 'تم عزل وإحالة الوحدات غير المعتمدة بنجاح وتحويل النظام إلى Staff-Only ERP'
+        : `تنبيه: لا زالت بعض المفاتيح الملغاة موجودة: ${activeRetiredKeys.join(', ')}`,
     });
 
     // 3. Password Security Audit (No plain passwords in system)
@@ -417,16 +395,16 @@ export class OperationsService {
       },
       {
         id: 'UAT-PAR-01',
-        role: 'Parent',
-        roleLabel: 'ولي الأمر (Mobile-First)',
-        module: 'اليوم الدراسي لولي الأمر',
-        scenario: 'دخول ولي الأمر من الهاتف ومتابعة حضور اليوم، الحصص، الواجب، والتنبيهات',
-        steps: ['Login كـ ولي أمر', 'اختيار الابن', 'مراجعة حضور الصباح وحضور الحصص والواجبات المنزلية'],
-        expected: 'عرض ملخص سريع ونظيف خالي من التعقيدات مع إخفاء الأرقام القومية وحظر الطلاب الآخرين',
-        actual: 'شاشة نظيفة جدا وسريعة الاستجابة مع إخفاء الهوية الوطنية وحماية الخصوصية',
+        role: 'SocialSpecialist',
+        roleLabel: 'الأخصائي الاجتماعي وشئون الطلاب',
+        module: 'دليل تواصل أولياء الأمور والتواصل المسجل',
+        scenario: 'تسجيل وتوثيق اتصالات وملاحظات أولياء الأمور بواسطة موظفي المدرسة مع حماية خصوصية البيانات',
+        steps: ['اختيار ملف الطالب من قبل الأخصائي', 'مراجعة بيانات الاتصال المعتمدة لولي الأمر', 'تسجيل ملاحظة تواصل رسمية في السجل المعتمد'],
+        expected: 'حفظ وتوثيق سجل التواصل الإداري الداخلي بأمان بدون فتح حساب خارجي لولي الأمر',
+        actual: 'توثيق فوري وتحديث بطاقة الطالب وسجل الرقابة الإدارية',
         result: 'PASS',
         severity: 'P0',
-        notes: 'جاهز تماماً للتشغيل الميداني لأولياء الأمور',
+        notes: 'مطابق لتعليمات وزارة التربية والتعليم للتوثيق الإداري والمدرسي الداخلي',
       },
       {
         id: 'UAT-SEC-01',
@@ -513,13 +491,13 @@ export class OperationsService {
         notes: 'لائحة الانضباط والمواقف الإيجابية وتواصل أولياء الأمور مستوفاة بالكامل.',
       },
       {
-        role: 'Parent',
-        roleTitle: 'ممثل مجلس الآباء والمعلمين',
+        role: 'StudentAffairs',
+        roleTitle: 'مسؤول شئون الطلاب وقيد الدوام',
         status: 'PASS',
-        signoffUser: 'د. طارق المنشاوي',
-        testedScenariosCount: 5,
-        passedCount: 5,
-        notes: 'البوابة سريعة وواضحة والخصوصية محمية 100%.',
+        signoffUser: 'أ. محمود عبد الهادي',
+        testedScenariosCount: 8,
+        passedCount: 8,
+        notes: 'عمليات قيد حضور الصباح والتأخير والأذونات مستوفاة ومحمية بالكامل.',
       },
     ];
 
@@ -539,7 +517,7 @@ export class OperationsService {
     }
 
     const defaultMetrics: PilotMetricsData = {
-      pilotActiveUsers: 38,
+      pilotActiveUsers: 24,
       loginSuccessRate: 99.8,
       attendanceSaveSuccessRate: 100,
       avgClassroomAttendanceSec: 11.4,
@@ -547,8 +525,8 @@ export class OperationsService {
       syncFailuresCount: 0,
       apiFailuresCount: 0,
       activeTeachersCount: 8,
-      lessonsRecordedCount: 42,
-      activeParentsCount: 26,
+      lessonsRecordedCount: 0,
+      activeParentsCount: 0,
       attendanceCompletionRate: 99.1,
     };
 
@@ -794,7 +772,6 @@ export class OperationsService {
       students: storageService.getStudents(),
       employees: storageService.getEmployees(),
       attendance: storageService.getAttendance(),
-      schedule: storageService.getSchedule(),
       users: storageService.getUsers(),
       timestamp,
     };

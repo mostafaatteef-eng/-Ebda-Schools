@@ -89,7 +89,6 @@ import { generateClientSessionToken, hashPasswordSHA256, hashPlainSHA256 } from 
 import { buildUnifiedAttendanceRecord, calculateAttendanceMetrics } from '../utils/attendanceUtils';
 import { computeAttendanceDayReview, calculateStudentLateMinutes } from '../utils/attendanceEngine';
 import { SyncQueueService } from './syncQueueService';
-import { ParentService } from './parentService';
 import { NotificationService } from './notificationService';
 
 const STORAGE_KEYS = {
@@ -327,13 +326,13 @@ class StorageService {
     }
 
     // Enforce Staff-Only Scope: Student, Parent, and Teacher standalone logins
-    if (found.role === 'Student') {
+    if ((found.role as string) === 'Student') {
       return { success: false, message: 'لا توجد حسابات دخول للطلاب، النظام مخصص للطاقم المدرسي والإدارة فقط' };
     }
-    if (found.role === 'Parent' && !settings.parentAccountsEnabled) {
+    if ((found.role as string) === 'Parent' && !settings.parentAccountsEnabled) {
       return { success: false, message: 'بوابة أولياء الأمور غير مفعلة، النظام مخصص للإدارة المدرسية وفريق العمل فقط' };
     }
-    if (found.role === 'Teacher' && !settings.teacherAccountsEnabled) {
+    if ((found.role as string) === 'Teacher' && !settings.teacherAccountsEnabled) {
       return { success: false, message: 'حسابات المعلمين المستقلة غير مفعلة، يتم إدارة المعلمين عبر شئون المعلمين والعاملين' };
     }
 
@@ -1581,7 +1580,7 @@ class StorageService {
 
   public saveScheduleItem(item: ScheduleItem): { success: boolean; message?: string } {
     const caller = this.getCurrentUser();
-    const isScheduleAdmin = !caller || caller.role === 'Admin' || caller.role === 'Supervisor';
+    const isScheduleAdmin = !caller || caller.role === 'Admin' || (caller.role as string) === 'Supervisor';
     if (!isScheduleAdmin) {
       return { success: false, message: 'غير مصرح للمعلم بتعديل أو إضافة حصص في الجدول العام (مقتصر على الإدارة والمشرفين).' };
     }
@@ -1601,7 +1600,7 @@ class StorageService {
 
   public deleteScheduleItem(id: string): { success: boolean; message?: string } {
     const caller = this.getCurrentUser();
-    const isScheduleAdmin = !caller || caller.role === 'Admin' || caller.role === 'Supervisor';
+    const isScheduleAdmin = !caller || caller.role === 'Admin' || (caller.role as string) === 'Supervisor';
     if (!isScheduleAdmin) {
       return { success: false, message: 'غير مصرح للمعلم بحذف حصص من الجدول العام.' };
     }
@@ -1724,20 +1723,7 @@ class StorageService {
 
   public saveEmployee(emp: Employee): { success: boolean; message?: string } {
     const list = this.getEmployees({ includeFinancials: true });
-    const user = this.getCurrentUser();
-    const isAdmin = !user || user.role === 'Admin';
     const idx = list.findIndex(e => e.id === emp.id);
-
-    // Guard against non-admin altering salaries
-    if (!isAdmin) {
-      if (idx >= 0) {
-        emp.basicSalary = list[idx].basicSalary;
-        emp.allowances = list[idx].allowances;
-      } else {
-        emp.basicSalary = 0;
-        emp.allowances = 0;
-      }
-    }
 
     if (idx >= 0) {
       const old = list[idx];
@@ -2142,7 +2128,7 @@ class StorageService {
   public saveLeave(leave: LeaveRecord, callerUser?: User | null): { success: boolean; message?: string } {
     const list = this.getLeaves();
     const caller = callerUser || this.getCurrentUser();
-    const isLeaveAdmin = caller?.role === 'Admin' || caller?.role === 'TeacherAffairs' || caller?.role === 'HR';
+    const isLeaveAdmin = caller?.role === 'Admin' || caller?.role === 'TeacherAffairs' || (caller?.role as string) === 'HR';
 
     // Strict Identity Ownership Enforce:
     let preparedLeave = { ...leave };
@@ -2318,7 +2304,6 @@ class StorageService {
         if (Array.isArray(d.behaviorViolations)) localStorage.setItem(STORAGE_KEYS.BEHAVIOR_VIOLATIONS, JSON.stringify(d.behaviorViolations));
         if (Array.isArray(d.schedule)) localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(d.schedule));
         if (Array.isArray(d.lessonContent)) localStorage.setItem(STORAGE_KEYS.LESSON_CONTENT, JSON.stringify(d.lessonContent));
-        if (Array.isArray(d.payroll)) localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(d.payroll));
         if (Array.isArray(d.academicYears)) localStorage.setItem(STORAGE_KEYS.ACADEMIC_YEARS, JSON.stringify(d.academicYears));
         if (Array.isArray(d.studentEnrollments)) localStorage.setItem(STORAGE_KEYS.STUDENT_ENROLLMENTS, JSON.stringify(d.studentEnrollments));
         if (Array.isArray(d.studentTransfers)) localStorage.setItem(STORAGE_KEYS.STUDENT_TRANSFERS, JSON.stringify(d.studentTransfers));
@@ -3322,21 +3307,6 @@ class StorageService {
         message: res.message || (res.status === 'success' ? 'Synced' : 'Failed to sync')
       };
     });
-  }
-
-  public getParentLinkedStudents(currentUser?: User | null) {
-    const user = currentUser || this.getCurrentUser();
-    return ParentService.getMyLinkedStudents(user);
-  }
-
-  public getParentDayView(studentId: string, targetDate?: string, currentUser?: User | null) {
-    const user = currentUser || this.getCurrentUser();
-    return ParentService.getParentDayView(studentId, targetDate, user);
-  }
-
-  public getParentAttendanceSummary(studentId: string, currentUser?: User | null) {
-    const user = currentUser || this.getCurrentUser();
-    return ParentService.getParentAttendanceSummary(studentId, user);
   }
 
   private async pushPost(action: string, data: any): Promise<void> {

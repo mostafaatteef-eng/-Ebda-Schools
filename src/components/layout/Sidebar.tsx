@@ -31,9 +31,6 @@ export type ActiveTab =
   | 'students'
   | 'student_attendance'
   | 'behavior'
-  | 'teacher_portal'
-  | 'parent_portal'
-  | 'parent_day_view'
   | 'daily_attendance'
   | 'monthly_matrix'
   | 'employees'
@@ -131,24 +128,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'لائحة الانضباط والخدمة الاجتماعية',
           icon: Shield,
           permission: 'behavior.view',
-        },
-        {
-          id: 'teacher_portal',
-          label: 'بوابة المعلم واليوم الدراسي',
-          icon: BookOpen,
-          permission: 'teacherPortal.access',
-        },
-        {
-          id: 'parent_day_view',
-          label: 'اليوم الدراسي لابنك',
-          icon: Sun,
-          badge: 'مباشر',
-        },
-        {
-          id: 'parent_portal',
-          label: 'بوابة ولي الأمر الشاملة',
-          icon: HeartHandshake,
-          permission: 'parentPortal.access',
         },
       ],
     },

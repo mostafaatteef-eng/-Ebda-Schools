@@ -8,6 +8,7 @@ import {
   PermissionType,
   Student,
   UserRole,
+  LegacyUserRole,
 } from './types';
 
 /* =========================================================================
@@ -93,7 +94,7 @@ export interface AppNotification {
   title: string;
   message: string;
   targetUserId?: string;
-  targetRole?: UserRole | 'ALL';
+  targetRole?: UserRole | LegacyUserRole | 'ALL';
   targetStudentId?: string;
   deduplicationKey?: string;
   relatedEntity?: string;
@@ -305,7 +306,7 @@ export interface SavedReportFilter {
 /* =========================================================================
  * 9. Backup & Export Metadata & Restore
  * ========================================================================= */
-export type BackupType = 'FULL' | 'CONFIG' | 'ACADEMIC' | 'HR' | 'PAYROLL';
+export type BackupType = 'FULL' | 'CONFIG' | 'ACADEMIC' | 'HR';
 
 export interface SystemBackupMetadata {
   id: string;
@@ -457,7 +458,7 @@ export interface SystemHealthOverview {
     employees: number;
     studentAttendanceRows: number;
     employeeAttendanceRows: number;
-    classAttendanceRows: number;
+    classAttendanceRows?: number;
     violations: number;
     notifications: number;
     auditLogs: number;

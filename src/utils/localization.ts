@@ -1,6 +1,6 @@
-import { UserRole } from '../types';
+import { UserRole, LegacyUserRole } from '../types';
 
-export const ROLE_LABELS: Record<UserRole, string> = {
+export const ROLE_LABELS: Record<LegacyUserRole, string> = {
   Admin: 'مدير النظام',
   SchoolDirector: 'مدير المدرسة',
   StudentAffairs: 'مسئول شئون الطلاب والقيد',

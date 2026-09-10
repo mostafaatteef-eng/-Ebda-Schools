@@ -1,19 +1,44 @@
-export type UserRole =
+export type StaffRole =
   | 'Admin'
   | 'SchoolDirector'
   | 'StudentAffairs'
   | 'TeacherAffairs'
   | 'SocialSpecialist'
   | 'TrainingOfficer'
-  | 'QualityOfficer'
+  | 'QualityOfficer';
+
+export type UserRole = StaffRole;
+
+// Legacy and Historical Roles for Audit, Archive, and Migration
+export type LegacyUserRole =
+  | StaffRole
   | 'HR'
   | 'Supervisor'
   | 'BehaviorOfficer'
   | 'Employee'
   | 'Viewer'
-  | 'Teacher' // Deprecated: preserved for historical/schema typing only, forbidden from login
-  | 'Parent'  // Deprecated: preserved for historical/schema typing only, forbidden from login
-  | 'Student'; // Deprecated: preserved for historical/schema typing only, forbidden from login
+  | 'Teacher' // Historical archive only - forbidden from login
+  | 'Parent'  // Historical archive only - forbidden from login
+  | 'Student'; // Historical archive only - forbidden from login
+
+/**
+ * Normalizes legacy roles to the 7 canonical Staff roles.
+ * Throws ACCOUNT_ROLE_NOT_ALLOWED for retired non-staff roles.
+ */
+export function normalizeStaffRole(role: string): StaffRole {
+  const r = (role || '').trim();
+  if (r === 'Teacher' || r === 'Parent' || r === 'Student') {
+    throw new Error('ACCOUNT_ROLE_NOT_ALLOWED');
+  }
+  if (r === 'Admin') return 'Admin';
+  if (r === 'SchoolDirector' || r === 'Supervisor') return 'SchoolDirector';
+  if (r === 'StudentAffairs') return 'StudentAffairs';
+  if (r === 'TeacherAffairs' || r === 'HR' || r === 'Employee') return 'TeacherAffairs';
+  if (r === 'SocialSpecialist' || r === 'BehaviorOfficer') return 'SocialSpecialist';
+  if (r === 'TrainingOfficer') return 'TrainingOfficer';
+  if (r === 'QualityOfficer' || r === 'Viewer') return 'QualityOfficer';
+  return 'Admin';
+}
 
 export type PermissionKey =
   | 'students.view'
@@ -34,7 +59,12 @@ export type PermissionKey =
   | 'classAttendance.view'
   | 'classAttendance.create'
   | 'classAttendance.edit'
+  | 'classAttendance.delete'
   | 'classAttendance.manageOwnLessons'
+  | 'teacherPortal.access'
+  | 'parentPortal.access'
+  | 'teacherSchedule.viewOwn'
+  | 'schedule.view'
   | 'academicYears.view'
   | 'academicYears.create'
   | 'academicYears.edit'
@@ -53,8 +83,6 @@ export type PermissionKey =
   | 'teachers.edit'
   | 'teachers.delete'
   | 'teachers.import'
-  | 'teacherPortal.access'
-  | 'teacherSchedule.viewOwn'
   | 'teacherAttendance.view'
   | 'teacherAttendance.create'
   | 'teacherAttendance.edit'
@@ -76,31 +104,6 @@ export type PermissionKey =
   | 'positiveBehavior.create'
   | 'parentCommunication.view'
   | 'parentCommunication.create'
-  | 'schedule.view'
-  | 'schedule.manage'
-  | 'schedule.publish'
-  | 'schedule.cancelLesson'
-  | 'schedule.exportPdf'
-  | 'schedule.manageSubstitution'
-  | 'schedule.viewConflicts'
-  | 'lessonContent.view'
-  | 'lessonContent.create'
-  | 'lessonContent.edit'
-  | 'lessonContent.editOwn'
-  | 'lessonContent.publish'
-  | 'lessonResources.manage'
-  | 'homework.create'
-  | 'homework.editOwn'
-  | 'homework.publish'
-  | 'parentPortal.access'
-  | 'parentPortal.preview'
-  | 'parentStudents.viewOwn'
-  | 'parentAttendance.viewOwn'
-  | 'parentSchedule.viewOwn'
-  | 'parentLessonContent.viewOwn'
-  | 'parentHomework.viewOwn'
-  | 'parentBehavior.viewOwn'
-  | 'parentNotifications.viewOwn'
   | 'settings.manage'
   | 'users.manage'
   | 'audit.view'
@@ -151,9 +154,13 @@ export interface User {
   name?: string; // compatibility alias for fullName
   role: UserRole;
   employeeId?: string;
-  studentIds?: string[]; // For Parent accounts linked to one or more students
   email: string;
-  password?: string;
+  password?: string; // write-only when creating/resetting
+  passwordHash?: string;
+  passwordSalt?: string;
+  passwordAlgorithm?: string;
+  passwordIterations?: number;
+  passwordChangedAt?: string;
   department?: string;
   isActive?: boolean;
   status: 'Active' | 'Inactive';
@@ -161,7 +168,9 @@ export interface User {
   lastLogin?: string;
   avatar?: string;
   pin?: string;
+  studentIds?: string[];
   sessionToken?: string;
+  sessionExpiresAt?: string;
   mustChangePassword?: boolean;
 }
 
@@ -173,8 +182,6 @@ export interface Employee {
   department: string;
   jobTitle: string;
   hireDate: string;
-  basicSalary?: number;
-  allowances?: number; // بدلات
   workingHours: number; // e.g. 8
   workStartTime: string; // e.g. "07:30"
   workEndTime: string; // e.g. "15:00"
@@ -182,6 +189,8 @@ export interface Employee {
   status: 'Active' | 'Inactive';
   phone?: string;
   email?: string;
+  basicSalary?: number;
+  allowances?: number;
   isTeacher?: boolean;
   teachingSubjects?: string[];
   assignedGrades?: string[];
@@ -1324,7 +1333,7 @@ export interface AlertRuleItem {
   category: 'student_absence' | 'student_late' | 'behavior_points' | 'teacher_lesson_delay' | 'teacher_late' | 'payroll_closing';
   thresholdValue: number;
   unitText: string;
-  targetRoles: UserRole[];
+  targetRoles: (UserRole | LegacyUserRole)[];
   isActive: boolean;
   messageTemplate: string;
 }
@@ -1594,7 +1603,7 @@ export interface SystemSettings {
   };
   
   // الحضور والسلوك
-  scheduleConfig: ScheduleConfig;
+  scheduleConfig?: ScheduleConfig;
   studentAttendanceStatuses: StudentAttendanceStatusConfig[];
   studentAttendanceRules: StudentAttendanceRules;
   teacherAttendanceRules: TeacherAttendanceRules;
@@ -1606,18 +1615,18 @@ export interface SystemSettings {
   leaveTypes: LeaveTypeConfig[];
   permissionTypes: PermissionTypeConfig[];
   
-  // المرتبات والرسوم والأقساط
-  payrollRules: PayrollRule;
-  allowanceTypes: AllowanceTypeItem[];
-  deductionTypes: DeductionTypeItem[];
+  // المرتبات والرسوم والأقساط (Legacy / Optional)
+  payrollRules?: PayrollRule;
+  allowanceTypes?: AllowanceTypeItem[];
+  deductionTypes?: DeductionTypeItem[];
   feeCategories?: FeeCategoryItem[];
   installmentPlans?: PaymentInstallmentPlan[];
   paymentMethods?: PaymentMethodConfig[];
   
-  // بوابات المستخدمين
-  parentPortalSettings: ParentPortalSettings;
-  teacherPortalSettings: TeacherPortalSettings;
-  socialSpecialistSettings: SocialSpecialistSettings;
+  // بوابات المستخدمين (Legacy / Optional)
+  parentPortalSettings?: ParentPortalSettings;
+  teacherPortalSettings?: TeacherPortalSettings;
+  socialSpecialistSettings?: SocialSpecialistSettings;
   
   // الاستيراد والتصدير
   importSettings: ImportSettings;

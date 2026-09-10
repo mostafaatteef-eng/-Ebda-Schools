@@ -192,10 +192,9 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({ currentUse
           {/* Backup Types Selection */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
-              { type: 'FULL' as BackupType, title: 'نسخة شاملة لكل الكيانات (Full)', desc: 'الطلاب، المعلمين، الحضور، الإعدادات، السلوك، والمالية' },
-              { type: 'ACADEMIC' as BackupType, title: 'البيانات الأكاديمية والطلاب', desc: 'الطلاب، الحضور والغياب، الحصص، والواجبات' },
+              { type: 'FULL' as BackupType, title: 'نسخة شاملة لكل الكيانات (Full)', desc: 'الطلاب، المعلمين، الحضور، الإعدادات، والسلوك' },
+              { type: 'ACADEMIC' as BackupType, title: 'البيانات الأكاديمية والطلاب', desc: 'الطلاب، الحضور والغياب، والسلوك المدرسي' },
               { type: 'HR' as BackupType, title: 'شؤون المعلمين والموظفين', desc: 'الموظفون، دوام الموظفين، الإجازات، والأذونات' },
-              { type: 'PAYROLL' as BackupType, title: 'محرك ومسير الرواتب (Admin Only)', desc: 'السجلات المالية واللقطات الشهرية المقفلة' },
               { type: 'CONFIG' as BackupType, title: 'تهيئة وإعدادات النظام', desc: 'الأعوام الدراسية، الفصول، المواد، والتعريفات' },
             ].map(item => {
               const isSelected = selectedType === item.type;

@@ -113,8 +113,8 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
     }
   };
 
-  const getRoleBadge = (r: UserRole) => {
-    switch (r) {
+  const getRoleBadge = (r: UserRole | string) => {
+    switch (r as string) {
       case 'Admin':
       case 'SchoolDirector':
         return (
